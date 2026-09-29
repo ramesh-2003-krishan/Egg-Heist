@@ -31,7 +31,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   onJoin(client: Client, options: any) {
-    console.log(`Client joined: ${client.sessionId}`);
+    console.log(`🎮 [Server] Client joining room: ${client.sessionId}`);
 
     const player = new Player();
     player.id = client.sessionId;
@@ -45,9 +45,12 @@ export class GameRoom extends Room<GameState> {
     player.speed = 10;
     player.money = 0;
 
+    console.log(`🎮 [Server] Player created: ${player.name} (${client.sessionId})`);
+
     this.state.players.set(client.sessionId, player);
     this.playerInputs.set(client.sessionId, { moveX: 0, moveZ: 0, rotationY: 0 });
-    console.log(`🎮 Player registered in room state: ${client.sessionId} (Total players in room state: ${this.state.players.size})`);
+
+    console.log(`🎮 [Server] Registered player in room state. Current players.size: ${this.state.players.size}`);
   }
 
   onLeave(client: Client, consented: boolean) {

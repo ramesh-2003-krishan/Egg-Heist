@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@colyseus/schema": "^5.0.34",
+    "@colyseus/schema": "^2.0.35",
     "colyseus.js": "^0.15.20",
     "three": "^0.164.1"
   },
