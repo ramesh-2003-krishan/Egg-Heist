@@ -62,6 +62,19 @@ class GameRoom extends colyseus_1.Room {
                 console.log(`🛍️ [Server] Player ${player.name} upgraded Pet Slots to ${nextUpgrade.multiplier}`);
             }
         });
+        // Bloxity SDK Avatar Sync Listener
+        this.onMessage("updateBloxityAvatar", (client, cosmetics) => {
+            const player = this.state.players.get(client.sessionId);
+            if (!player || !cosmetics)
+                return;
+            player.skinId = cosmetics.skinId || "";
+            player.hatId = cosmetics.hatId || "";
+            player.hairId = cosmetics.hairId || "";
+            player.faceId = cosmetics.faceId || "";
+            player.shirtId = cosmetics.shirtId || "";
+            player.pantsId = cosmetics.pantsId || "";
+            console.log(`👤 [Server] Player ${player.name} updated Bloxity cosmetics (Skin: ${player.skinId}, Hat: ${player.hatId}, Hair: ${player.hairId})`);
+        });
         // Spawn initial wave of map eggs
         for (let i = 0; i < 4; i++) {
             this.spawnRandomMapEgg();

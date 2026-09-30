@@ -78,13 +78,13 @@ export class SceneManager {
     sunLight.shadow.mapSize.height = 2048;
     sunLight.shadow.camera.near = 0.5;
     sunLight.shadow.camera.far = 150;
-    
+
     const d = 40;
     sunLight.shadow.camera.left = -d;
     sunLight.shadow.camera.right = d;
     sunLight.shadow.camera.top = d;
     sunLight.shadow.camera.bottom = -d;
-    
+
     this.scene.add(sunLight);
 
     const fillLight = new THREE.DirectionalLight(0x60a5fa, 0.4);
@@ -99,7 +99,7 @@ export class SceneManager {
   public addAvatar(id: string, name: string, isLocal: boolean): Avatar {
     const skinColors = [0xef4444, 0x10b981, 0x8b5cf6, 0xf59e0b, 0xec4899, 0x06b6d4];
     const colorHex = skinColors[Math.abs(this.hashCode(id)) % skinColors.length];
-    
+
     const avatar = new Avatar(id, name, isLocal, colorHex);
     this.avatars.set(id, avatar);
     this.scene.add(avatar.group);
@@ -132,7 +132,8 @@ export class SceneManager {
     speed?: number,
     speedStat?: number,
     carriedEggTier?: string,
-    equippedDivineTrail?: boolean
+    equippedDivineTrail?: boolean,
+    bloxityCosmetics?: { skinId?: string; hatId?: string; hairId?: string; faceId?: string; shirtId?: string; pantsId?: string }
   ) {
     const avatar = this.avatars.get(id);
     if (avatar) {
@@ -143,6 +144,9 @@ export class SceneManager {
       avatar.setCarriedEgg(carriedEggTier || "");
       if (typeof equippedDivineTrail === "boolean") {
         avatar.setEquippedDivineTrail(equippedDivineTrail);
+      }
+      if (bloxityCosmetics) {
+        avatar.setBloxityCosmetics(bloxityCosmetics);
       }
     }
   }

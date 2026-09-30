@@ -48,6 +48,14 @@ export class Player extends Schema {
   @type("boolean") hasAngelicTreadmill: boolean = false;
   @type("boolean") equippedAngelicTreadmill: boolean = false;
   @type("string") lastHatchedReward: string = "";
+
+  // Bloxity SDK Equipped Cosmetics
+  @type("string") skinId: string = "";
+  @type("string") hatId: string = "";
+  @type("string") hairId: string = "";
+  @type("string") faceId: string = "";
+  @type("string") shirtId: string = "";
+  @type("string") pantsId: string = "";
 }
 
 export class GameState extends Schema {

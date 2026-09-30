@@ -7,6 +7,18 @@ import {
   BASE_UPGRADES,
   PET_SLOT_UPGRADES,
 } from "../config";
+import {
+  initBloxity,
+  getUser,
+  showAuthPopup,
+  logout,
+  onUserChanged,
+  getEquippedCosmetics,
+  onAvatarChanged,
+  loadingEnd,
+  gameplayStart,
+  BloxityUser,
+} from "../bloxity";
 
 export class NetworkManager {
   private client: Client;
@@ -35,6 +47,14 @@ export class NetworkManager {
   private petsCountTitleElement: HTMLElement | null;
   private petsListContainerElement: HTMLElement | null;
   private togglePetsBtn: HTMLElement | null;
+
+  // Bloxity UI Elements
+  private bloxityLoggedOutBox: HTMLElement | null;
+  private bloxityLoggedInBox: HTMLElement | null;
+  private bloxityPfpImg: HTMLImageElement | null;
+  private bloxityNameSpan: HTMLElement | null;
+  private bloxityLoginBtn: HTMLElement | null;
+  private bloxityLogoutBtn: HTMLElement | null;
 
   public localSessionId: string | null = null;
   private lastHandledRewardTimestamp: number = 0;
@@ -65,7 +85,18 @@ export class NetworkManager {
     this.petsListContainerElement = document.getElementById("pets-list-container");
     this.togglePetsBtn = document.getElementById("toggle-pets-btn");
 
+    this.bloxityLoggedOutBox = document.getElementById("bloxity-logged-out");
+    this.bloxityLoggedInBox = document.getElementById("bloxity-logged-in");
+    this.bloxityPfpImg = document.getElementById("bloxity-pfp") as HTMLImageElement;
+    this.bloxityNameSpan = document.getElementById("bloxity-name");
+    this.bloxityLoginBtn = document.getElementById("bloxity-login-btn");
+    this.bloxityLogoutBtn = document.getElementById("bloxity-logout-btn");
+
+    // Initialize Bloxity SDK
+    initBloxity();
+
     this.setupUIEvents();
+    this.setupBloxityEvents();
 
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const host = window.location.hostname || "localhost";
@@ -116,6 +147,52 @@ export class NetworkManager {
     }
   }
 
+  private setupBloxityEvents() {
+    if (this.bloxityLoginBtn) {
+      this.bloxityLoginBtn.addEventListener("click", async () => {
+        await showAuthPopup();
+      });
+    }
+    if (this.bloxityLogoutBtn) {
+      this.bloxityLogoutBtn.addEventListener("click", () => {
+        logout();
+      });
+    }
+
+    onUserChanged((user: BloxityUser | null) => {
+      this.updateBloxityAuthUI(user);
+      this.sendLocalBloxityCosmetics();
+    });
+
+    onAvatarChanged(() => {
+      this.sendLocalBloxityCosmetics();
+    });
+  }
+
+  private updateBloxityAuthUI(user: BloxityUser | null) {
+    if (user) {
+      if (this.bloxityLoggedOutBox) this.bloxityLoggedOutBox.classList.add("hidden");
+      if (this.bloxityLoggedInBox) this.bloxityLoggedInBox.classList.remove("hidden");
+      if (this.bloxityNameSpan) {
+        this.bloxityNameSpan.textContent = user.displayName || user.username;
+      }
+      if (this.bloxityPfpImg) {
+        this.bloxityPfpImg.src = user.pfp || "https://static.bloxity.io/avatars/icons/default_pfp.png";
+      }
+    } else {
+      if (this.bloxityLoggedOutBox) this.bloxityLoggedOutBox.classList.remove("hidden");
+      if (this.bloxityLoggedInBox) this.bloxityLoggedInBox.classList.add("hidden");
+    }
+  }
+
+  private sendLocalBloxityCosmetics() {
+    if (!this.room) return;
+    const cosmetics = getEquippedCosmetics();
+    if (cosmetics) {
+      this.room.send("updateBloxityAvatar", cosmetics);
+    }
+  }
+
   private toggleShopModal() {
     if (this.shopModalElement) {
       this.shopModalElement.classList.toggle("hidden");
@@ -145,6 +222,13 @@ export class NetworkManager {
 
       this.localSessionId = this.room.sessionId;
       this.sceneManager.setLocalAvatarId(this.localSessionId);
+
+      // Send local player's equipped Bloxity cosmetics on room join
+      this.sendLocalBloxityCosmetics();
+
+      // Trigger Bloxity SDK Lifecycle hooks
+      loadingEnd();
+      gameplayStart();
 
       if (this.statusElement) {
         this.statusElement.textContent = `🟢 Connected (ID: ${this.localSessionId.slice(0, 5)})`;
@@ -188,7 +272,7 @@ export class NetworkManager {
           }
         }
 
-        // Update Active Pets List Panel
+        // Active Pets Panel Update
         const petsArr = player.pets ? Array.from(player.pets) as unknown as Pet[] : [];
         const maxPetSlots = player.maxPetSlots || 6;
         if (this.petsCountTitleElement) {
@@ -262,7 +346,15 @@ export class NetworkManager {
               player.speed,
               player.speedStat,
               player.carriedEggTier,
-              player.equippedDivineTrail
+              player.equippedDivineTrail,
+              {
+                skinId: player.skinId,
+                hatId: player.hatId,
+                hairId: player.hairId,
+                faceId: player.faceId,
+                shirtId: player.shirtId,
+                pantsId: player.pantsId,
+              }
             );
             if (sessionId === this.localSessionId) updateLocalHUD(player);
           });

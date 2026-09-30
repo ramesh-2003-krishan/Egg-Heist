@@ -4,12 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Egg Heist - 3D Multiplayer Game</title>
+    <!-- Bloxity SDK -->
+    <script src="https://sdk.bloxity.io/legion-sdk.min.js"></script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app"></div>
     <div id="ui-container">
       <div id="hud">
+        <!-- Bloxity Auth Profile Card -->
+        <div id="bloxity-profile" class="bloxity-card">
+          <div id="bloxity-logged-out" class="bloxity-auth-box">
+            <button id="bloxity-login-btn" class="bloxity-btn">🌐 Log in with Bloxity</button>
+          </div>
+          <div id="bloxity-logged-in" class="bloxity-user-box hidden">
+            <img id="bloxity-pfp" class="bloxity-avatar-img" src="" alt="Profile" />
+            <div class="bloxity-user-info">
+              <span id="bloxity-name" class="bloxity-username">Guest</span>
+              <button id="bloxity-logout-btn" class="bloxity-logout">Log out</button>
+            </div>
+          </div>
+        </div>
+
         <div class="hud-header-row">
           <div class="hud-title">🥚 EGG HEIST</div>
           <button id="open-shop-btn" class="hud-btn">🛒 SHOP [B]</button>

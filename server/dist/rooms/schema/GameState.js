@@ -121,7 +121,7 @@ class Player extends schema_1.Schema {
         this.carriedEgg = null;
         this.incubatorEggs = new schema_1.ArraySchema();
         this.pets = new schema_1.ArraySchema();
-        // Shop Upgrade Properties
+        // Shop Upgrades
         this.treadmillTier = 1;
         this.baseTier = 1;
         this.maxPetSlots = 6;
@@ -131,6 +131,13 @@ class Player extends schema_1.Schema {
         this.hasAngelicTreadmill = false;
         this.equippedAngelicTreadmill = false;
         this.lastHatchedReward = "";
+        // Bloxity SDK Equipped Cosmetics
+        this.skinId = "";
+        this.hatId = "";
+        this.hairId = "";
+        this.faceId = "";
+        this.shirtId = "";
+        this.pantsId = "";
     }
 }
 exports.Player = Player;
@@ -226,6 +233,30 @@ __decorate([
     (0, schema_1.type)("string"),
     __metadata("design:type", String)
 ], Player.prototype, "lastHatchedReward", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "skinId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "hatId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "hairId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "faceId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "shirtId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "pantsId", void 0);
 class GameState extends schema_1.Schema {
     constructor() {
         super(...arguments);

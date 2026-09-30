@@ -1,5 +1,7 @@
 import * as THREE from "three";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { EGG_TIERS } from "../config";
+import { BLOXITY_STATIC_CDN, getSkinTextureUrl } from "../bloxity";
 
 export class Avatar {
   public group: THREE.Group;
@@ -9,7 +11,15 @@ export class Avatar {
   public speedStat: number = 1;
   public carriedEggTier: string = "";
   public equippedDivineTrail: boolean = false;
-  
+
+  // Bloxity Cosmetic Fields
+  public skinId: string = "";
+  public hatId: string = "";
+  public hairId: string = "";
+  public faceId: string = "";
+  public shirtId: string = "";
+  public pantsId: string = "";
+
   private torso: THREE.Mesh;
   private head: THREE.Mesh;
   private leftArm: THREE.Mesh;
@@ -21,7 +31,12 @@ export class Avatar {
   private trailPositions: Float32Array;
   private trailColors: Float32Array;
   private particleIndex: number = 0;
-  
+
+  private hatMesh: THREE.Object3D | null = null;
+  private hairMesh: THREE.Object3D | null = null;
+  private objLoader: OBJLoader;
+  private textureLoader: THREE.TextureLoader;
+
   private targetPosition: THREE.Vector3;
   private targetRotationY: number = 0;
   private animTimer: number = 0;
@@ -31,6 +46,9 @@ export class Avatar {
     this.id = id;
     this.isLocal = isLocal;
     this.group = new THREE.Group();
+
+    this.objLoader = new OBJLoader();
+    this.textureLoader = new THREE.TextureLoader();
 
     const shirtColor = isLocal ? 0x1d4ed8 : 0x10b981;
     const pantsColor = 0x1f2937;
@@ -94,7 +112,7 @@ export class Avatar {
     nameSprite.position.set(0, 3.0, 0);
     this.group.add(nameSprite);
 
-    // 3D Divine Rainbow Particle Trail Buffer
+    // Divine Rainbow Particle Trail Buffer
     const count = 40;
     this.trailPositions = new Float32Array(count * 3);
     this.trailColors = new Float32Array(count * 3);
@@ -111,6 +129,148 @@ export class Avatar {
     this.trailParticles = new THREE.Points(trailGeo, trailMat);
 
     this.targetPosition = new THREE.Vector3();
+  }
+
+  public setBloxityCosmetics(cosmetics: {
+    skinId?: string;
+    hatId?: string;
+    hairId?: string;
+    faceId?: string;
+    shirtId?: string;
+    pantsId?: string;
+  }) {
+    let changed = false;
+
+    if (cosmetics.skinId !== undefined && cosmetics.skinId !== this.skinId) {
+      this.skinId = cosmetics.skinId;
+      changed = true;
+    }
+    if (cosmetics.hatId !== undefined && cosmetics.hatId !== this.hatId) {
+      this.hatId = cosmetics.hatId;
+      changed = true;
+    }
+    if (cosmetics.hairId !== undefined && cosmetics.hairId !== this.hairId) {
+      this.hairId = cosmetics.hairId;
+      changed = true;
+    }
+    if (cosmetics.faceId !== undefined && cosmetics.faceId !== this.faceId) {
+      this.faceId = cosmetics.faceId;
+      changed = true;
+    }
+    if (cosmetics.shirtId !== undefined && cosmetics.shirtId !== this.shirtId) {
+      this.shirtId = cosmetics.shirtId;
+      changed = true;
+    }
+    if (cosmetics.pantsId !== undefined && cosmetics.pantsId !== this.pantsId) {
+      this.pantsId = cosmetics.pantsId;
+      changed = true;
+    }
+
+    if (changed) {
+      this.applyBloxitySkinTexture();
+      this.applyBloxityHat();
+      this.applyBloxityHair();
+    }
+  }
+
+  private applyBloxitySkinTexture() {
+    let textureUrl = "";
+    if (this.isLocal) {
+      textureUrl = getSkinTextureUrl() || "";
+    }
+
+    if (!textureUrl) {
+      const sId = this.skinId && this.skinId !== "-1" ? this.skinId : "0";
+      let queryParts = [];
+      if (this.pantsId && this.pantsId !== "-1") queryParts.push(`_pn${this.pantsId}`);
+      if (this.shirtId && this.shirtId !== "-1") queryParts.push(`_sh${this.shirtId}`);
+      if (this.faceId && this.faceId !== "-1") queryParts.push(`_fc${this.faceId}`);
+
+      if (queryParts.length > 0) {
+        textureUrl = `https://api.bloxity.io/v1/avatar/skin-texture/s${sId}${queryParts.join("")}.png`;
+      } else if (this.skinId && this.skinId !== "-1") {
+        textureUrl = `${BLOXITY_STATIC_CDN}/skins/${this.skinId}.png`;
+      }
+    }
+
+    if (textureUrl) {
+      this.textureLoader.load(
+        textureUrl,
+        (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          const customMat = new THREE.MeshStandardMaterial({
+            map: texture,
+            roughness: 0.3,
+          });
+          this.torso.material = customMat;
+          this.head.material = customMat;
+        },
+        undefined,
+        (err) => {
+          console.warn("⚠️ [Bloxity] Failed to load skin texture, keeping fallback:", err);
+        }
+      );
+    }
+  }
+
+  private applyBloxityHat() {
+    if (this.hatMesh) {
+      this.head.remove(this.hatMesh);
+      this.hatMesh = null;
+    }
+
+    if (this.hatId && this.hatId !== "-1" && this.hatId !== "undefined") {
+      const objUrl = `${BLOXITY_STATIC_CDN}/items/hats/${this.hatId}.obj`;
+      const texUrl = `${BLOXITY_STATIC_CDN}/textures/hats/${this.hatId}.png`;
+
+      this.textureLoader.load(texUrl, (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const hatMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
+
+        this.objLoader.load(objUrl, (obj) => {
+          obj.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              (child as THREE.Mesh).material = hatMat;
+              child.castShadow = true;
+            }
+          });
+          obj.position.set(0, 0.4, 0);
+          obj.scale.set(0.25, 0.25, 0.25);
+          this.hatMesh = obj;
+          this.head.add(this.hatMesh);
+        });
+      });
+    }
+  }
+
+  private applyBloxityHair() {
+    if (this.hairMesh) {
+      this.head.remove(this.hairMesh);
+      this.hairMesh = null;
+    }
+
+    if (this.hairId && this.hairId !== "-1" && this.hairId !== "undefined") {
+      const objUrl = `${BLOXITY_STATIC_CDN}/items/hats/${this.hairId}.obj`;
+      const texUrl = `${BLOXITY_STATIC_CDN}/textures/hats/${this.hairId}.png`;
+
+      this.textureLoader.load(texUrl, (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const hairMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
+
+        this.objLoader.load(objUrl, (obj) => {
+          obj.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              (child as THREE.Mesh).material = hairMat;
+              child.castShadow = true;
+            }
+          });
+          obj.position.set(0, 0.38, 0);
+          obj.scale.set(0.25, 0.25, 0.25);
+          this.hairMesh = obj;
+          this.head.add(this.hairMesh);
+        });
+      });
+    }
   }
 
   public setEquippedDivineTrail(equipped: boolean) {
@@ -193,7 +353,6 @@ export class Avatar {
         positions[idx + 1] = 0.2 + Math.random() * 0.8;
         positions[idx + 2] = -0.6 - Math.random() * 0.6;
 
-        // Rainbow Colors HSL
         const hue = (Date.now() % 2000) / 2000;
         const color = new THREE.Color().setHSL(hue, 1.0, 0.5);
         colors[idx] = color.r;
