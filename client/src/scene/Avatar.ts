@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { EGG_TIERS } from "../config";
 import { BLOXITY_STATIC_CDN, getSkinTextureUrl } from "../bloxity";
 
@@ -20,6 +21,12 @@ export class Avatar {
   public shirtId: string = "";
   public pantsId: string = "";
 
+  // Mesh & Skeleton Containers
+  private boxAvatarGroup: THREE.Group;
+  private playerGlbScene: THREE.Group | null = null;
+  private neck1Bone: THREE.Object3D | null = null;
+  private isGlbLoaded: boolean = false;
+
   private torso: THREE.Mesh;
   private head: THREE.Mesh;
   private leftArm: THREE.Mesh;
@@ -27,6 +34,7 @@ export class Avatar {
   private leftLeg: THREE.Mesh;
   private rightLeg: THREE.Mesh;
   private carriedEggGroup: THREE.Group | null = null;
+
   private trailParticles: THREE.Points | null = null;
   private trailPositions: Float32Array;
   private trailColors: Float32Array;
@@ -35,12 +43,14 @@ export class Avatar {
   private hatMesh: THREE.Object3D | null = null;
   private hairMesh: THREE.Object3D | null = null;
   private objLoader: OBJLoader;
+  private gltfLoader: GLTFLoader;
   private textureLoader: THREE.TextureLoader;
 
   private targetPosition: THREE.Vector3;
   private targetRotationY: number = 0;
   private animTimer: number = 0;
   private isMoving: boolean = false;
+  private currentSkinTexture: THREE.Texture | null = null;
 
   constructor(id: string, name: string, isLocal: boolean = false, skinColorHex: number = 0x3b82f6) {
     this.id = id;
@@ -48,7 +58,12 @@ export class Avatar {
     this.group = new THREE.Group();
 
     this.objLoader = new OBJLoader();
+    this.gltfLoader = new GLTFLoader();
     this.textureLoader = new THREE.TextureLoader();
+
+    // Box-based Fallback Avatar Container
+    this.boxAvatarGroup = new THREE.Group();
+    this.group.add(this.boxAvatarGroup);
 
     const shirtColor = isLocal ? 0x1d4ed8 : 0x10b981;
     const pantsColor = 0x1f2937;
@@ -65,7 +80,7 @@ export class Avatar {
     this.torso.position.y = 1.15;
     this.torso.castShadow = true;
     this.torso.receiveShadow = true;
-    this.group.add(this.torso);
+    this.boxAvatarGroup.add(this.torso);
 
     // Head
     const headGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7);
@@ -109,7 +124,7 @@ export class Avatar {
 
     // Name Tag
     const nameSprite = this.createNameTagSprite(name, isLocal);
-    nameSprite.position.set(0, 3.0, 0);
+    nameSprite.position.set(0, 3.2, 0);
     this.group.add(nameSprite);
 
     // Divine Rainbow Particle Trail Buffer
@@ -129,6 +144,53 @@ export class Avatar {
     this.trailParticles = new THREE.Points(trailGeo, trailMat);
 
     this.targetPosition = new THREE.Vector3();
+
+    // Load Bloxity player.glb Character Mesh
+    this.loadBloxityPlayerGlb();
+  }
+
+  private loadBloxityPlayerGlb() {
+    const playerGlbUrl = `${BLOXITY_STATIC_CDN}/player.glb`;
+
+    this.gltfLoader.load(
+      playerGlbUrl,
+      (gltf) => {
+        this.playerGlbScene = gltf.scene;
+        this.playerGlbScene.scale.set(1.1, 1.1, 1.1);
+        this.playerGlbScene.position.set(0, 0, 0);
+
+        // Enable shadows and find Neck1 bone
+        this.playerGlbScene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+          if (child.name === "Neck1" || child.name === "neck1" || child.name === "Head" || child.name === "head") {
+            if (!this.neck1Bone) this.neck1Bone = child;
+          }
+        });
+
+        // Add player.glb to avatar group and hide box fallback
+        this.group.add(this.playerGlbScene);
+        this.boxAvatarGroup.visible = false;
+        this.isGlbLoaded = true;
+
+        console.log(`✅ [Bloxity] Successfully loaded player.glb for avatar (ID: ${this.id})`);
+
+        // Apply skin texture and cosmetics if already set
+        if (this.currentSkinTexture) {
+          this.applyTextureToGlb(this.currentSkinTexture);
+        }
+        this.applyBloxityHat();
+        this.applyBloxityHair();
+      },
+      undefined,
+      (err) => {
+        console.warn("⚠️ [Bloxity] Failed to load player.glb, using box avatar fallback:", err);
+        this.boxAvatarGroup.visible = true;
+        this.isGlbLoaded = false;
+      }
+    );
   }
 
   public setBloxityCosmetics(cosmetics: {
@@ -198,12 +260,20 @@ export class Avatar {
         textureUrl,
         (texture) => {
           texture.colorSpace = THREE.SRGBColorSpace;
+          this.currentSkinTexture = texture;
+
+          // Apply to Box Fallback Avatar
           const customMat = new THREE.MeshStandardMaterial({
             map: texture,
             roughness: 0.3,
           });
           this.torso.material = customMat;
           this.head.material = customMat;
+
+          // Apply to GLTF player.glb Avatar
+          if (this.playerGlbScene) {
+            this.applyTextureToGlb(texture);
+          }
         },
         undefined,
         (err) => {
@@ -213,9 +283,25 @@ export class Avatar {
     }
   }
 
+  private applyTextureToGlb(texture: THREE.Texture) {
+    if (!this.playerGlbScene) return;
+
+    this.playerGlbScene.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.material = new THREE.MeshStandardMaterial({
+          map: texture,
+          roughness: 0.3,
+        });
+      }
+    });
+  }
+
   private applyBloxityHat() {
+    const parentContainer = this.neck1Bone || (this.isGlbLoaded && this.playerGlbScene ? this.playerGlbScene : this.head);
+
     if (this.hatMesh) {
-      this.head.remove(this.hatMesh);
+      parentContainer.remove(this.hatMesh);
       this.hatMesh = null;
     }
 
@@ -234,18 +320,20 @@ export class Avatar {
               child.castShadow = true;
             }
           });
-          obj.position.set(0, 0.4, 0);
+          obj.position.set(0, 0.8, 0);
           obj.scale.set(0.25, 0.25, 0.25);
           this.hatMesh = obj;
-          this.head.add(this.hatMesh);
+          parentContainer.add(this.hatMesh);
         });
       });
     }
   }
 
   private applyBloxityHair() {
+    const parentContainer = this.neck1Bone || (this.isGlbLoaded && this.playerGlbScene ? this.playerGlbScene : this.head);
+
     if (this.hairMesh) {
-      this.head.remove(this.hairMesh);
+      parentContainer.remove(this.hairMesh);
       this.hairMesh = null;
     }
 
@@ -264,10 +352,10 @@ export class Avatar {
               child.castShadow = true;
             }
           });
-          obj.position.set(0, 0.38, 0);
+          obj.position.set(0, 0.8, 0);
           obj.scale.set(0.25, 0.25, 0.25);
           this.hairMesh = obj;
-          this.head.add(this.hairMesh);
+          parentContainer.add(this.hairMesh);
         });
       });
     }
@@ -289,7 +377,7 @@ export class Avatar {
     this.carriedEggTier = tier;
 
     if (this.carriedEggGroup) {
-      this.torso.remove(this.carriedEggGroup);
+      this.group.remove(this.carriedEggGroup);
       this.carriedEggGroup = null;
     }
 
@@ -308,8 +396,8 @@ export class Avatar {
       eggMesh.castShadow = true;
       this.carriedEggGroup.add(eggMesh);
 
-      this.carriedEggGroup.position.set(0, 0.1, 0.55);
-      this.torso.add(this.carriedEggGroup);
+      this.carriedEggGroup.position.set(0, 1.25, 0.55);
+      this.group.add(this.carriedEggGroup);
 
       this.leftArm.rotation.x = -Math.PI / 3;
       this.rightArm.rotation.x = -Math.PI / 3;
@@ -364,7 +452,7 @@ export class Avatar {
       }
     }
 
-    // Limb Animations
+    // Walking Animation Update
     if (this.isMoving) {
       const animSpeed = 10 * (this.speed / 10);
       this.animTimer += dt * Math.min(30, animSpeed);
@@ -380,6 +468,10 @@ export class Avatar {
 
       this.leftLeg.rotation.x = -angle;
       this.rightLeg.rotation.x = angle;
+
+      if (this.playerGlbScene) {
+        this.playerGlbScene.rotation.z = Math.sin(this.animTimer * 0.5) * 0.05;
+      }
     } else {
       if (!this.carriedEggTier) {
         this.leftArm.rotation.x *= 0.8;
@@ -387,6 +479,9 @@ export class Avatar {
       }
       this.leftLeg.rotation.x *= 0.8;
       this.rightLeg.rotation.x *= 0.8;
+      if (this.playerGlbScene) {
+        this.playerGlbScene.rotation.z *= 0.8;
+      }
       this.animTimer = 0;
     }
   }

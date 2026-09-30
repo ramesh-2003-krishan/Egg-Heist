@@ -84,13 +84,22 @@ export class GameRoom extends Room<GameState> {
       const player = this.state.players.get(client.sessionId);
       if (!player || !cosmetics) return;
 
-      player.skinId = cosmetics.skinId || "";
-      player.hatId = cosmetics.hatId || "";
-      player.hairId = cosmetics.hairId || "";
-      player.faceId = cosmetics.faceId || "";
-      player.shirtId = cosmetics.shirtId || "";
-      player.pantsId = cosmetics.pantsId || "";
-      console.log(`👤 [Server] Player ${player.name} updated Bloxity cosmetics (Skin: ${player.skinId}, Hat: ${player.hatId}, Hair: ${player.hairId})`);
+      const sanitizeId = (id: any): string => {
+        if (typeof id !== "string") return "";
+        const trimmed = id.trim();
+        if (trimmed.length > 40) return "";
+        if (!/^[A-Za-z0-9_-]*$/.test(trimmed)) return "";
+        return trimmed;
+      };
+
+      player.skinId = sanitizeId(cosmetics.skinId);
+      player.hatId = sanitizeId(cosmetics.hatId);
+      player.hairId = sanitizeId(cosmetics.hairId);
+      player.faceId = sanitizeId(cosmetics.faceId);
+      player.shirtId = sanitizeId(cosmetics.shirtId);
+      player.pantsId = sanitizeId(cosmetics.pantsId);
+
+      console.log(`👤 [Server] Player ${player.name} updated validated Bloxity cosmetics (Skin: ${player.skinId}, Hat: ${player.hatId}, Hair: ${player.hairId})`);
     });
 
     // Spawn initial wave of map eggs
