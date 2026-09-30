@@ -1,22 +1,24 @@
 import * as THREE from "three";
 import { Avatar } from "./Avatar";
 import { BaseManager } from "./BaseManager";
+import { EggManager } from "./EggManager";
+import { PetManager } from "./PetManager";
 
 export class SceneManager {
   public scene: THREE.Scene;
   public camera: THREE.PerspectiveCamera;
   public renderer: THREE.WebGLRenderer;
   public baseManager: BaseManager;
+  public eggManager: EggManager;
+  public petManager: PetManager;
   private avatars: Map<string, Avatar> = new Map();
   private localAvatarId: string | null = null;
 
   constructor(container: HTMLElement) {
-    // 1. Create Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0f172a); // Dark slate blue background
+    this.scene.background = new THREE.Color(0x0f172a);
     this.scene.fog = new THREE.FogExp2(0x0f172a, 0.012);
 
-    // 2. Camera Setup
     this.camera = new THREE.PerspectiveCamera(
       60,
       window.innerWidth / window.innerHeight,
@@ -25,7 +27,6 @@ export class SceneManager {
     );
     this.camera.position.set(0, 10, 15);
 
-    // 3. Renderer Setup
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -33,24 +34,20 @@ export class SceneManager {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
-    // 4. Environment: Ground Plane & Grid
     this.setupEnvironment();
-
-    // 5. Lighting Setup
     this.setupLighting();
 
-    // 6. 3D Bases & Treadmill Manager
-    this.baseManager = new BaseManager(this.scene);
+    this.eggManager = new EggManager(this.scene);
+    this.baseManager = new BaseManager(this.scene, this.eggManager);
+    this.petManager = new PetManager(this.scene);
 
-    // 7. Window Resize Handler
     window.addEventListener("resize", () => this.onWindowResize());
   }
 
   private setupEnvironment() {
-    // Ground plane (100x100)
     const groundGeo = new THREE.PlaneGeometry(100, 100);
     const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b, // Dark grey-blue ground
+      color: 0x1e293b,
       roughness: 0.8,
       metalness: 0.2,
     });
@@ -59,12 +56,10 @@ export class SceneManager {
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // Stylish 3D Grid helper overlay
     const grid = new THREE.GridHelper(100, 50, 0x3b82f6, 0x334155);
     grid.position.y = 0.01;
     this.scene.add(grid);
 
-    // Outer boundary walls (Visual bounds indicator)
     const wallMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6, wireframe: true, transparent: true, opacity: 0.15 });
     const wallGeo = new THREE.BoxGeometry(100, 4, 100);
     const boundsBox = new THREE.Mesh(wallGeo, wallMat);
@@ -73,11 +68,9 @@ export class SceneManager {
   }
 
   private setupLighting() {
-    // Ambient light
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambient);
 
-    // Directional Sun Light
     const sunLight = new THREE.DirectionalLight(0xfffaed, 1.2);
     sunLight.position.set(30, 45, 20);
     sunLight.castShadow = true;
@@ -94,7 +87,6 @@ export class SceneManager {
     
     this.scene.add(sunLight);
 
-    // Fill Light
     const fillLight = new THREE.DirectionalLight(0x60a5fa, 0.4);
     fillLight.position.set(-20, 20, -20);
     this.scene.add(fillLight);
@@ -131,14 +123,6 @@ export class SceneManager {
     return this.avatars.get(id);
   }
 
-  public getAvatarIds(): string[] {
-    return Array.from(this.avatars.keys());
-  }
-
-  public getAvatarCount(): number {
-    return this.avatars.size;
-  }
-
   public updateAvatarState(
     id: string,
     x: number,
@@ -146,7 +130,9 @@ export class SceneManager {
     z: number,
     rotationY: number,
     speed?: number,
-    speedStat?: number
+    speedStat?: number,
+    carriedEggTier?: string,
+    equippedDivineTrail?: boolean
   ) {
     const avatar = this.avatars.get(id);
     if (avatar) {
@@ -154,17 +140,30 @@ export class SceneManager {
       avatar.setRotationY(rotationY);
       if (typeof speed === "number") avatar.speed = speed;
       if (typeof speedStat === "number") avatar.speedStat = speedStat;
+      avatar.setCarriedEgg(carriedEggTier || "");
+      if (typeof equippedDivineTrail === "boolean") {
+        avatar.setEquippedDivineTrail(equippedDivineTrail);
+      }
     }
   }
 
-  public update(dt: number, playersMap?: Map<string, any>) {
-    // 1. Update 3D bases & owner signs
-    this.baseManager.update(dt, playersMap || new Map());
+  public syncMapEggs(mapEggs: Map<string, any>) {
+    this.eggManager.syncMapEggs(mapEggs);
+  }
 
-    // 2. Update all avatars' limb animations and position lerping
+  public syncPets(playersMap: Map<string, any>) {
+    this.petManager.syncPets(playersMap);
+  }
+
+  public update(dt: number, playersMap?: Map<string, any>) {
+    const map = playersMap || new Map();
+    this.baseManager.update(dt, map);
+    this.eggManager.update(dt);
+    this.petManager.update(dt);
+    this.petManager.syncPets(map);
+
     this.avatars.forEach((avatar) => avatar.update(dt));
 
-    // 3. Third-Person Camera Follow
     if (this.localAvatarId) {
       const localAvatar = this.avatars.get(this.localAvatarId);
       if (localAvatar) {

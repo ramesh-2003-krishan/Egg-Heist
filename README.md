@@ -1,116 +1,124 @@
-# 🥚 Egg Heist - Multiplayer 3D Browser Game
+# 🥚 Egg Heist - 3D Multiplayer Browser Game
 
-A real-time multiplayer 3D browser game built with **Node.js + Colyseus** (authoritative server) and **Three.js + Vite** (3D web client).
-
-## 🚀 Stack & Technology
-- **Backend (`/server`)**: Node.js, Express, Colyseus 0.15, `@colyseus/schema`, TypeScript.
-- **Frontend (`/client`)**: Vite, Three.js, `colyseus.js`, TypeScript, Vanilla CSS.
-
-## 📦 Project Layout
-```
-Egg-Heist/
-├── package.json              # Root script runner (concurrently)
-├── README.md                 # Project documentation
-├── server/                   # Authoritative Colyseus WebSocket Server
-│   ├── src/
-│   │   ├── config.ts         # Centralized game configuration (speed, base slots, bounds)
-│   │   ├── index.ts          # Express + Colyseus server entry
-│   │   └── rooms/
-│   │       ├── GameRoom.ts   # 60 FPS authoritative loop, slot allocation & treadmill collision
-│   │       └── schema/
-│   │           └── GameState.ts # Colyseus Player & GameState schema
-│   └── package.json
-└── client/                   # Three.js 3D Web Frontend
-    ├── index.html            # Game entry point & HUD overlay
-    ├── src/
-    │   ├── config.ts         # Client game configuration constants
-    │   ├── main.ts           # Game render loop setup
-    │   ├── input/            # WASD Keyboard listener
-    │   ├── network/          # Colyseus Client connection manager & HUD binder
-    │   └── scene/            # 3D Scene, Bases & Treadmills, Camera, Avatars
-    └── package.json
-```
-
-## 🛠️ Quick Start
-
-### 1. Install Dependencies
-Run from the root directory:
-```bash
-# Install root, server, and client dependencies
-npm install
-npm --prefix server install
-npm --prefix client install
-```
-
-### 2. Build Check
-To verify TypeScript compilation for both server and client:
-```bash
-npm --prefix server run build
-npm --prefix client run build
-```
-
-### 3. Run Development Server & Client
-To launch both server (port `2567`) and client (port `5173`) simultaneously:
-```bash
-npm run dev
-```
-
-Open your browser to:
-- **Client**: `http://localhost:5173`
-- **Server Health check**: `http://localhost:2567/health`
+A Roblox-inspired 3D real-time multiplayer browser game built with **Three.js** and **Colyseus** (server-authoritative physics & game loop).
 
 ---
 
-## ⚙️ Features
+## 🎮 Core Game Features
 
-### Phase 1: Authoritative Multiplayer Core
-- **Authoritative Server State**: Player movement vectors are processed on a 60 FPS Colyseus tick loop on the server and synced binary to all clients.
-- **Roblox-style Avatars**: Composite 3D blocky avatars with dynamic limb walking animations and floating name tags.
-- **Third-Person Camera**: Smooth camera follow system adhering to player movement.
-- **Multi-Tab Syncing**: Instant state synchronization on player join, move, and leave events.
+1. **Player Base Platforms & Treadmills**:
+   - Each player automatically gets assigned an authoritative base platform (up to 4–6 slots per room).
+   - Stepping onto your personal base treadmill raises your **Speed Stat** over time.
+   - Upgrading treadmills multiplies speed growth rate up to **8x**.
 
-### Phase 2: Bases, Treadmill & Speed Scaling
-- **Authoritative Base Slot Allocation**: Max 4 slots laid out around the map. Each player is assigned a unique base slot upon joining; slots are automatically reclaimed when players leave.
-- **Base Visuals & Animated Treadmills**: 3D colored platforms featuring continuously animated treadmill belts and custom base signs displaying the owner's name (`BASE #1: [PlayerName]`).
-- **Server-Checked Treadmill Speed Growth**: Standing inside your **own** base treadmill zone triggers authoritative `speedStat` growth (+0.5 speed/sec). Opponents cannot hijack or receive speed boosts on your base treadmill.
-- **Speed Scaling & Walk Animation**: Player movement speed scales dynamically based on `speedStat` (`speed = baseSpeed * (1 + speedStat * 0.05)`). Walking limb animation speed scales proportionally with player speed.
-- **HUD & Name Tag Fixes**: Displays real-time `Speed`, `Money`, and an active pulse badge `🔥 On treadmill: +0.5 speed/s`. Floating name tags raised (`y = 3.0`) so they never overlap avatar heads.
+2. **Procedural 3D World Eggs & Carrying/Stealing Physics**:
+   - 6 Egg Tiers: `Common`, `Rare`, `Epic`, `Secret` (Zebra canvas texture), `Eternal` (Rainbow gradient), and `Divine` (Shining gold).
+   - Carrying eggs reduces movement speed based on tier weight multipliers.
+   - Steal eggs directly out of opponent base incubators!
+   - Player-to-player physical collisions cause carried eggs to drop onto the ground.
+
+3. **Egg Hatching, Procedural 3D Pets & Continuous Income**:
+   - Deposited eggs tick down their hatch timer inside wooden incubator nests.
+   - Hatched eggs generate 3D blocky pets floating around the owner's platform.
+   - Pets feature procedural names, 3 sizes (`small`, `normal`, `giant`), and 4 mutations (`none`, `golden` 2x, `rainbow` 4x, `shiny` 8x).
+   - Pets generate continuous passive income (`$`/sec) into your player balance.
+
+4. **Rare Hatch Rewards (~1.2% Divine Trail & ~0.9% Angelic Treadmill)**:
+   - **Divine Rainbow Particle Trail**: Avatar emits dynamic 3D rainbow particles while sprinting.
+   - **Angelic Treadmill**: Upgrades base treadmill visual to 3D white marble pillars, golden halos, and white feathery wings (**3x speed growth multiplier**).
+   - Animated **"YOU GOT..."** celebration banner popup for rare drops.
+
+5. **Shop System & Upgrades**:
+   - **Hotkeys**: Press **B** or **E** anytime to toggle the Shop Modal UI.
+   - **⚡ Treadmill Upgrades**: Unlock Neon Runner, Hyper Turbo, and Cosmic Overdrive with custom 3D glowing treadmill belt animations.
+   - **🏠 Base Upgrades**: Expand incubator capacity from 3 up to 6 eggs and enlarge base platform size.
+   - **🐾 Pet Slots**: Unlock active pet slots from 6 up to 12.
+
+---
+
+## 🚀 Quick Start & Development
+
+### 1. Install Dependencies
+```bash
+# Install Server Dependencies
+cd server
+npm install
+
+# Install Client Dependencies
+cd ../client
+npm install
+```
+
+### 2. Run Development Servers
+From the root project directory:
+```bash
+npm run dev
+```
+- **Client**: `http://localhost:5173`
+- **Colyseus Server**: `ws://localhost:2567`
+
+### 3. Check Production Build
+```bash
+# Build Server
+cd server && npm run build
+
+# Build Client
+cd client && npm run build
+```
 
 ---
 
 ## 🧪 Manual Testing Instructions (Two Tabs)
 
-To manually test Phase 2 functionality:
+1. Run `npm run dev`.
+2. Open **Tab 1** (`http://localhost:5173`).
+3. Open **Tab 2** (`http://localhost:5173`).
+4. **Test Real-Time Multiplayer Sync**:
+   - Use `WASD` or `Arrow Keys` in Tab 1—avatar movement & rotation update synchronously in Tab 2.
+5. **Test Egg Carrying & Stealing**:
+   - Pick up wild eggs from map center.
+   - Deposit in your base incubator or steal from Tab 2's base nest.
+   - Collide Tab 1 avatar into Tab 2 avatar while carrying an egg to drop it onto the ground.
+6. **Test Incubators & Pets**:
+   - Wait for incubator egg countdown to finish.
+   - Observe 3D pet spawn and money continuously increment in the HUD.
+7. **Test Shop Upgrades**:
+   - Press **B** to open the Shop.
+   - Purchase treadmill upgrades or base expansion to observe real-time 3D model changes!
 
-1. **Start the servers**:
-   Run `npm run dev` from the root folder (or `npm run dev` in separate terminals inside `server/` and `client/`).
+---
 
-2. **Open Tab 1 (Player 1)**:
-   - Open browser to `http://localhost:5173`.
-   - **Observe**: You spawn next to **Base #1** (Top-Left base slot).
-   - **Observe**: Base #1's sign board reads `BASE #1: [Your Name]`.
-   - **Observe HUD**: Displays `⚡ Speed: 10.0 (1.0x)`, `💰 Money: $0`.
+## 📁 Architecture
 
-3. **Open Tab 2 (Player 2)**:
-   - Open a second tab or window to `http://localhost:5173`.
-   - **Observe**: Player 2 spawns next to **Base #2** (Top-Right base slot).
-   - **Observe**: Base #2's sign board displays Player 2's name.
-   - **In Tab 1**: You see Player 2 standing at Base #2 with their name on Base #2's sign post.
-
-4. **Test Treadmill Acceleration (Own Base)**:
-   - In Tab 1, walk onto Base #1's treadmill belt using **W/A/S/D**.
-   - **Observe HUD**: A green active badge pops up: `🔥 On treadmill: +0.5 speed/s`.
-   - **Observe Speed**: Speed value rises continuously (`10.5`, `11.2`, `12.0`, etc.).
-   - Step off the treadmill; the active badge hides and speed growth pauses.
-
-5. **Test Opponent Treadmill Exclusion**:
-   - In Tab 2, walk Player 2 onto Base #1's treadmill (Player 1's base).
-   - **Observe**: Player 2 does **NOT** get a speed boost and no treadmill active badge appears on Player 2's HUD. Only the base owner gets the treadmill boost.
-
-6. **Test Movement & Walk Animation Speed**:
-   - Walk Player 1 around after accumulating speed.
-   - **Observe**: Player 1 moves noticeably faster across the ground plane, and avatar leg/arm walking animations swing faster to match the higher movement speed.
-
-7. **Test Disconnect / Slot Deallocation**:
-   - Close Tab 1.
-   - **In Tab 2**: Base #1's sign updates to `BASE #1: UNCLAIMED`, freeing Slot #0 for the next player who joins.
+```
+Egg-Heist/
+├── server/               # Colyseus Authoritative Node.js Server
+│   ├── src/
+│   │   ├── config.ts     # Central game configuration & parameters
+│   │   ├── index.ts      # Server entry point
+│   │   └── rooms/
+│   │       ├── GameRoom.ts       # Main tick loop, physics, spawner, shop logic
+│   │       └── schema/
+│   │           └── GameState.ts  # Colyseus synchronization state schema
+│   ├── package.json
+│   └── tsconfig.json
+│
+├── client/               # Three.js Frontend Client
+│   ├── src/
+│   │   ├── config.ts     # Client game config
+│   │   ├── main.ts       # Entry point
+│   │   ├── network/
+│   │   │   ├── NetworkManager.ts # Colyseus client connection & HUD sync
+│   │   │   └── schema/GameState.ts
+│   │   ├── scene/
+│   │   │   ├── Avatar.ts        # 3D Avatar, egg carry pose, Rainbow Trail
+│   │   │   ├── BaseManager.ts   # 3D Base platforms, treadmills, Angelic design
+│   │   │   ├── EggManager.ts    # 3D Procedural egg rendering & particle effects
+│   │   │   ├── PetManager.ts    # 3D Blocky procedural pets around base
+│   │   │   └── SceneManager.ts  # Three.js camera, lighting, renderer
+│   │   └── style.css            # Dark mode glassmorphism UI & modals
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.ts
+└── README.md
+```

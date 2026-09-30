@@ -3,26 +3,67 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Egg Heist - Phase 2</title>
+    <title>Egg Heist - 3D Multiplayer Game</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app"></div>
     <div id="ui-container">
       <div id="hud">
-        <div class="hud-title">🥚 EGG HEIST</div>
+        <div class="hud-header-row">
+          <div class="hud-title">🥚 EGG HEIST</div>
+          <button id="open-shop-btn" class="hud-btn">🛒 SHOP [B]</button>
+        </div>
         <div id="connection-status">Connecting to server...</div>
         <div id="player-count">Players: 0</div>
 
         <div class="hud-stats">
           <div id="player-speed" class="stat-item">⚡ Speed: 10.0</div>
           <div id="player-money" class="stat-item">💰 Money: $0</div>
+          <div id="carried-egg" class="stat-item">🥚 Egg: None</div>
+          <div id="incubator-info" class="stat-item">🐣 Incubator: 0/3</div>
           <div id="treadmill-indicator" class="treadmill-badge hidden">🔥 On treadmill: +0.5 speed/s</div>
+        </div>
+
+        <div class="hud-pets-header">
+          <div id="pets-count-title" class="hud-sub-title">🐾 Active Pets (0/6)</div>
+          <button id="toggle-pets-btn" class="hud-mini-btn">▼</button>
+        </div>
+        <div id="pets-list-container" class="pets-list">
+          <div class="empty-pets">No pets hatched yet! Hatch eggs in incubator.</div>
         </div>
 
         <div class="controls-hint">
           <span><strong>W A S D</strong> / <strong>Arrows</strong> to move</span>
-          <span>Stand on your base treadmill to gain speed!</span>
+          <span>Press <strong>B</strong> for Shop</span>
+        </div>
+      </div>
+
+      <!-- Celebration Modal -->
+      <div id="reward-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+          <div class="modal-header">✨ YOU GOT... ✨</div>
+          <div id="reward-rarity" class="modal-rarity">DIVINE</div>
+          <div id="reward-title" class="modal-title">Divine Rainbow Trail</div>
+          <button id="reward-close-btn" class="modal-btn">AWESOME!</button>
+        </div>
+      </div>
+
+      <!-- Shop Modal -->
+      <div id="shop-modal" class="modal-overlay hidden">
+        <div class="shop-card">
+          <div class="shop-header">
+            <div class="shop-title">🛒 EGG HEIST SHOP</div>
+            <button id="shop-close-btn" class="shop-close">✕</button>
+          </div>
+          <div class="shop-tabs">
+            <button class="shop-tab active" data-tab="treadmills">⚡ Treadmills</button>
+            <button class="shop-tab" data-tab="bases">🏠 Base Upgrades</button>
+            <button class="shop-tab" data-tab="pets">🐾 Pet Slots</button>
+          </div>
+          <div id="shop-content" class="shop-content">
+            <!-- Rendered dynamically -->
+          </div>
         </div>
       </div>
     </div>
