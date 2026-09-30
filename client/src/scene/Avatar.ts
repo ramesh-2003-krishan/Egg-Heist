@@ -4,6 +4,8 @@ export class Avatar {
   public group: THREE.Group;
   public isLocal: boolean;
   public id: string;
+  public speed: number = 10;
+  public speedStat: number = 1;
   
   private torso: THREE.Mesh;
   private head: THREE.Mesh;
@@ -84,9 +86,9 @@ export class Avatar {
     this.rightLeg.castShadow = true;
     this.torso.add(this.rightLeg);
 
-    // Name Tag Floating Canvas Sprite
+    // Name Tag Floating Canvas Sprite (Raised height to y=3.0 so it doesn't overlap head)
     const nameSprite = this.createNameTagSprite(name, isLocal);
-    nameSprite.position.set(0, 2.3, 0);
+    nameSprite.position.set(0, 3.0, 0);
     this.group.add(nameSprite);
 
     this.targetPosition = new THREE.Vector3();
@@ -115,13 +117,13 @@ export class Avatar {
 
     // Smoothly rotate toward target rotation angle
     let diff = this.targetRotationY - this.group.rotation.y;
-    // Normalize diff to -PI .. PI
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
     this.group.rotation.y += diff * 0.25;
 
-    // Roblox walking limb animation
+    // Roblox walking limb animation with speed-scaled frequency
     if (this.isMoving) {
-      this.animTimer += dt * 10;
+      const animSpeed = 10 * (this.speed / 10);
+      this.animTimer += dt * Math.min(30, animSpeed);
       const angle = Math.sin(this.animTimer) * 0.6;
       this.leftArm.rotation.x = angle;
       this.rightArm.rotation.x = -angle;

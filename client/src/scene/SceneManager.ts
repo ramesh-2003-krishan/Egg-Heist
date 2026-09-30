@@ -1,10 +1,12 @@
 import * as THREE from "three";
 import { Avatar } from "./Avatar";
+import { BaseManager } from "./BaseManager";
 
 export class SceneManager {
   public scene: THREE.Scene;
   public camera: THREE.PerspectiveCamera;
   public renderer: THREE.WebGLRenderer;
+  public baseManager: BaseManager;
   private avatars: Map<string, Avatar> = new Map();
   private localAvatarId: string | null = null;
 
@@ -37,7 +39,10 @@ export class SceneManager {
     // 5. Lighting Setup
     this.setupLighting();
 
-    // 6. Window Resize Handler
+    // 6. 3D Bases & Treadmill Manager
+    this.baseManager = new BaseManager(this.scene);
+
+    // 7. Window Resize Handler
     window.addEventListener("resize", () => this.onWindowResize());
   }
 
@@ -134,19 +139,32 @@ export class SceneManager {
     return this.avatars.size;
   }
 
-  public updateAvatarState(id: string, x: number, y: number, z: number, rotationY: number) {
+  public updateAvatarState(
+    id: string,
+    x: number,
+    y: number,
+    z: number,
+    rotationY: number,
+    speed?: number,
+    speedStat?: number
+  ) {
     const avatar = this.avatars.get(id);
     if (avatar) {
       avatar.setPosition(x, y, z);
       avatar.setRotationY(rotationY);
+      if (typeof speed === "number") avatar.speed = speed;
+      if (typeof speedStat === "number") avatar.speedStat = speedStat;
     }
   }
 
-  public update(dt: number) {
-    // Update all avatars' limb animations and position lerping
+  public update(dt: number, playersMap?: Map<string, any>) {
+    // 1. Update 3D bases & owner signs
+    this.baseManager.update(dt, playersMap || new Map());
+
+    // 2. Update all avatars' limb animations and position lerping
     this.avatars.forEach((avatar) => avatar.update(dt));
 
-    // Third-Person Camera Follow
+    // 3. Third-Person Camera Follow
     if (this.localAvatarId) {
       const localAvatar = this.avatars.get(this.localAvatarId);
       if (localAvatar) {

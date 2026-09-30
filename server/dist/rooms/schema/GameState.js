@@ -12,14 +12,20 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GameState = exports.Player = void 0;
 const schema_1 = require("@colyseus/schema");
 class Player extends schema_1.Schema {
-    id = "";
-    name = "";
-    x = 0;
-    y = 0;
-    z = 0;
-    rotationY = 0;
-    speed = 8;
-    money = 0;
+    constructor() {
+        super(...arguments);
+        this.id = "";
+        this.name = "";
+        this.x = 0;
+        this.y = 0;
+        this.z = 0;
+        this.rotationY = 0;
+        this.speed = 10;
+        this.money = 0;
+        this.baseIndex = -1;
+        this.onTreadmill = false;
+        this.speedStat = 1;
+    }
 }
 exports.Player = Player;
 __decorate([
@@ -54,8 +60,23 @@ __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
 ], Player.prototype, "money", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "baseIndex", void 0);
+__decorate([
+    (0, schema_1.type)("boolean"),
+    __metadata("design:type", Boolean)
+], Player.prototype, "onTreadmill", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "speedStat", void 0);
 class GameState extends schema_1.Schema {
-    players = new schema_1.MapSchema();
+    constructor() {
+        super(...arguments);
+        this.players = new schema_1.MapSchema();
+    }
 }
 exports.GameState = GameState;
 __decorate([

@@ -49,8 +49,8 @@ class GameApp {
     // Send authoritative movement input to Colyseus server
     this.networkManager.sendMoveInput(movement.moveX, movement.moveZ, movement.rotationY);
 
-    // Render 3D Scene and update avatars
-    this.sceneManager.update(dt);
+    // Render 3D Scene and update avatars + bases
+    this.sceneManager.update(dt, this.networkManager.getPlayersMap());
   };
 }
 

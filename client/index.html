@@ -3,19 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Egg Heist - Multiplayer 3D Game</title>
+    <title>Egg Heist - Phase 2</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app"></div>
     <div id="ui-container">
       <div id="hud">
-        <div class="hud-title">🥚 EGG HEIST (Phase 1)</div>
+        <div class="hud-title">🥚 EGG HEIST</div>
         <div id="connection-status">Connecting to server...</div>
         <div id="player-count">Players: 0</div>
+
+        <div class="hud-stats">
+          <div id="player-speed" class="stat-item">⚡ Speed: 10.0</div>
+          <div id="player-money" class="stat-item">💰 Money: $0</div>
+          <div id="treadmill-indicator" class="treadmill-badge hidden">🔥 On treadmill: +0.5 speed/s</div>
+        </div>
+
         <div class="controls-hint">
           <span><strong>W A S D</strong> / <strong>Arrows</strong> to move</span>
-          <span>Authoritative Colyseus Sync</span>
+          <span>Stand on your base treadmill to gain speed!</span>
         </div>
       </div>
     </div>

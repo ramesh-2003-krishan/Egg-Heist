@@ -7,8 +7,11 @@ export class Player extends Schema {
   @type("number") y: number = 0;
   @type("number") z: number = 0;
   @type("number") rotationY: number = 0;
-  @type("number") speed: number = 8;
+  @type("number") speed: number = 10;
   @type("number") money: number = 0;
+  @type("number") baseIndex: number = -1;
+  @type("boolean") onTreadmill: boolean = false;
+  @type("number") speedStat: number = 1;
 }
 
 export class GameState extends Schema {
