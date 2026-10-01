@@ -82,7 +82,7 @@ export class GameRoom extends Room<GameState> {
     // Bloxity SDK Avatar Sync Listener
     this.onMessage("updateBloxityAvatar", (client, cosmetics: any) => {
       const player = this.state.players.get(client.sessionId);
-      if (!player || !cosmetics) return;
+      if (!player || typeof cosmetics !== "object" || cosmetics === null) return;
 
       const sanitizeId = (id: any): string => {
         if (typeof id !== "string") return "";
@@ -99,7 +99,7 @@ export class GameRoom extends Room<GameState> {
       player.shirtId = sanitizeId(cosmetics.shirtId);
       player.pantsId = sanitizeId(cosmetics.pantsId);
 
-      console.log(`👤 [Server] Player ${player.name} updated validated Bloxity cosmetics (Skin: ${player.skinId}, Hat: ${player.hatId}, Hair: ${player.hairId})`);
+      console.log(`👤 [Server] Player ${player.name} updated validated Bloxity cosmetics (Skin: '${player.skinId}', Hat: '${player.hatId}', Hair: '${player.hairId}')`);
     });
 
     // Spawn initial wave of map eggs

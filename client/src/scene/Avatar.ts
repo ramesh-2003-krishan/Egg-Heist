@@ -1,8 +1,39 @@
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { EGG_TIERS } from "../config";
-import { BLOXITY_STATIC_CDN, getSkinTextureUrl } from "../bloxity";
+import { BLOXITY_STATIC_CDN, getSkinTextureUrl, getUser } from "../bloxity";
+
+// Module-level GLB cache to prevent duplicate fetch requests across avatars
+let cachedGlbScene: THREE.Object3D | null = null;
+let glbLoadPromise: Promise<THREE.Object3D> | null = null;
+
+function getOrLoadPlayerGlb(loader: GLTFLoader): Promise<THREE.Object3D> {
+  if (cachedGlbScene) {
+    return Promise.resolve(cachedGlbScene);
+  }
+  if (glbLoadPromise) {
+    return glbLoadPromise;
+  }
+
+  const playerGlbUrl = `${BLOXITY_STATIC_CDN}/player.glb`;
+  glbLoadPromise = new Promise((resolve, reject) => {
+    loader.load(
+      playerGlbUrl,
+      (gltf) => {
+        cachedGlbScene = gltf.scene;
+        resolve(cachedGlbScene);
+      },
+      undefined,
+      (err) => {
+        glbLoadPromise = null;
+        reject(err);
+      }
+    );
+  });
+  return glbLoadPromise;
+}
 
 export class Avatar {
   public group: THREE.Group;
@@ -20,6 +51,7 @@ export class Avatar {
   public faceId: string = "";
   public shirtId: string = "";
   public pantsId: string = "";
+  public maskId: string = "";
 
   // Mesh & Skeleton Containers
   private boxAvatarGroup: THREE.Group;
@@ -34,6 +66,8 @@ export class Avatar {
   private leftLeg: THREE.Mesh;
   private rightLeg: THREE.Mesh;
   private carriedEggGroup: THREE.Group | null = null;
+  private nameSprite: THREE.Sprite | null = null;
+  private nameString: string = "";
 
   private trailParticles: THREE.Points | null = null;
   private trailPositions: Float32Array;
@@ -42,6 +76,8 @@ export class Avatar {
 
   private hatMesh: THREE.Object3D | null = null;
   private hairMesh: THREE.Object3D | null = null;
+  private maskMesh: THREE.Object3D | null = null;
+
   private objLoader: OBJLoader;
   private gltfLoader: GLTFLoader;
   private textureLoader: THREE.TextureLoader;
@@ -55,6 +91,7 @@ export class Avatar {
   constructor(id: string, name: string, isLocal: boolean = false, skinColorHex: number = 0x3b82f6) {
     this.id = id;
     this.isLocal = isLocal;
+    this.nameString = name;
     this.group = new THREE.Group();
 
     this.objLoader = new OBJLoader();
@@ -122,10 +159,8 @@ export class Avatar {
     this.rightLeg.castShadow = true;
     this.torso.add(this.rightLeg);
 
-    // Name Tag
-    const nameSprite = this.createNameTagSprite(name, isLocal);
-    nameSprite.position.set(0, 3.2, 0);
-    this.group.add(nameSprite);
+    // Floating Name Tag
+    this.updateNameTag();
 
     // Divine Rainbow Particle Trail Buffer
     const count = 40;
@@ -150,47 +185,72 @@ export class Avatar {
   }
 
   private loadBloxityPlayerGlb() {
-    const playerGlbUrl = `${BLOXITY_STATIC_CDN}/player.glb`;
-
-    this.gltfLoader.load(
-      playerGlbUrl,
-      (gltf) => {
-        this.playerGlbScene = gltf.scene;
+    getOrLoadPlayerGlb(this.gltfLoader)
+      .then((baseScene) => {
+        // Clone model per player using SkeletonUtils.clone so skinned meshes work correctly
+        const clonedScene = SkeletonUtils.clone(baseScene) as THREE.Group;
+        this.playerGlbScene = clonedScene;
         this.playerGlbScene.scale.set(1.1, 1.1, 1.1);
         this.playerGlbScene.position.set(0, 0, 0);
 
-        // Enable shadows and find Neck1 bone
+        // Find Neck1 bone and setup shadows
+        this.neck1Bone = null;
         this.playerGlbScene.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
           }
-          if (child.name === "Neck1" || child.name === "neck1" || child.name === "Head" || child.name === "head") {
-            if (!this.neck1Bone) this.neck1Bone = child;
+          if (
+            !this.neck1Bone &&
+            (child.name === "Neck1" || child.name === "neck1" || child.name === "Head" || child.name === "head")
+          ) {
+            this.neck1Bone = child;
           }
         });
 
-        // Add player.glb to avatar group and hide box fallback
         this.group.add(this.playerGlbScene);
-        this.boxAvatarGroup.visible = false;
         this.isGlbLoaded = true;
 
-        console.log(`✅ [Bloxity] Successfully loaded player.glb for avatar (ID: ${this.id})`);
+        const isGuest = this.checkIsGuest();
+        if (isGuest) {
+          this.boxAvatarGroup.visible = true;
+          this.playerGlbScene.visible = false;
+        } else {
+          this.boxAvatarGroup.visible = false;
+          this.playerGlbScene.visible = true;
+        }
 
-        // Apply skin texture and cosmetics if already set
+        console.log(`✅ [Bloxity] Successfully attached player.glb model (ID: ${this.id}, Guest: ${isGuest})`);
+
         if (this.currentSkinTexture) {
           this.applyTextureToGlb(this.currentSkinTexture);
+        } else {
+          this.applyBloxitySkinTexture();
         }
-        this.applyBloxityHat();
-        this.applyBloxityHair();
-      },
-      undefined,
-      (err) => {
-        console.warn("⚠️ [Bloxity] Failed to load player.glb, using box avatar fallback:", err);
+        this.applyBloxityAccessories();
+      })
+      .catch((err) => {
+        console.warn("⚠️ [Bloxity] Failed to load player.glb, falling back to box avatar:", err);
         this.boxAvatarGroup.visible = true;
         this.isGlbLoaded = false;
-      }
-    );
+      });
+  }
+
+  public checkIsGuest(): boolean {
+    if (this.isLocal) {
+      const user = getUser();
+      if (!user) return true;
+    }
+    const hasAnyCosmetic =
+      (this.skinId && this.skinId !== "-1" && this.skinId !== "0") ||
+      (this.hatId && this.hatId !== "-1") ||
+      (this.hairId && this.hairId !== "-1") ||
+      (this.maskId && this.maskId !== "-1") ||
+      (this.shirtId && this.shirtId !== "-1") ||
+      (this.pantsId && this.pantsId !== "-1") ||
+      (this.faceId && this.faceId !== "-1");
+
+    return !hasAnyCosmetic;
   }
 
   public setBloxityCosmetics(cosmetics: {
@@ -200,6 +260,7 @@ export class Avatar {
     faceId?: string;
     shirtId?: string;
     pantsId?: string;
+    maskId?: string;
   }) {
     let changed = false;
 
@@ -227,32 +288,46 @@ export class Avatar {
       this.pantsId = cosmetics.pantsId;
       changed = true;
     }
+    if (cosmetics.maskId !== undefined && cosmetics.maskId !== this.maskId) {
+      this.maskId = cosmetics.maskId;
+      changed = true;
+    }
+
+    if (this.isGlbLoaded && this.playerGlbScene) {
+      const isGuest = this.checkIsGuest();
+      this.boxAvatarGroup.visible = isGuest;
+      this.playerGlbScene.visible = !isGuest;
+    }
+
+    this.updateNameTag();
 
     if (changed) {
       this.applyBloxitySkinTexture();
-      this.applyBloxityHat();
-      this.applyBloxityHair();
+      this.applyBloxityAccessories();
     }
   }
 
-  private applyBloxitySkinTexture() {
+  private getRemoteSkinTextureUrl(): string {
+    const isValid = (id?: string) =>
+      Boolean(id && id !== "-1" && id !== "undefined" && id !== "null" && id.trim() !== "");
+
+    const sId = isValid(this.skinId) ? this.skinId : "0";
+    const queryParts: string[] = [];
+    if (isValid(this.pantsId)) queryParts.push(`_pn${this.pantsId}`);
+    if (isValid(this.shirtId)) queryParts.push(`_sh${this.shirtId}`);
+    if (isValid(this.faceId)) queryParts.push(`_fc${this.faceId}`);
+
+    return `https://api.bloxity.io/v1/avatar/skin-texture/s${sId}${queryParts.join("")}.png`;
+  }
+
+  public applyBloxitySkinTexture() {
     let textureUrl = "";
     if (this.isLocal) {
       textureUrl = getSkinTextureUrl() || "";
     }
 
     if (!textureUrl) {
-      const sId = this.skinId && this.skinId !== "-1" ? this.skinId : "0";
-      let queryParts = [];
-      if (this.pantsId && this.pantsId !== "-1") queryParts.push(`_pn${this.pantsId}`);
-      if (this.shirtId && this.shirtId !== "-1") queryParts.push(`_sh${this.shirtId}`);
-      if (this.faceId && this.faceId !== "-1") queryParts.push(`_fc${this.faceId}`);
-
-      if (queryParts.length > 0) {
-        textureUrl = `https://api.bloxity.io/v1/avatar/skin-texture/s${sId}${queryParts.join("")}.png`;
-      } else if (this.skinId && this.skinId !== "-1") {
-        textureUrl = `${BLOXITY_STATIC_CDN}/skins/${this.skinId}.png`;
-      }
+      textureUrl = this.getRemoteSkinTextureUrl();
     }
 
     if (textureUrl) {
@@ -277,7 +352,7 @@ export class Avatar {
         },
         undefined,
         (err) => {
-          console.warn("⚠️ [Bloxity] Failed to load skin texture, keeping fallback:", err);
+          console.warn("⚠️ [Bloxity] Failed to load skin texture, keeping default look:", err);
         }
       );
     }
@@ -297,68 +372,71 @@ export class Avatar {
     });
   }
 
-  private applyBloxityHat() {
-    const parentContainer = this.neck1Bone || (this.isGlbLoaded && this.playerGlbScene ? this.playerGlbScene : this.head);
+  private applyBloxityAccessories() {
+    this.loadAndAttachAccessory(this.hatId, "hat");
+    this.loadAndAttachAccessory(this.hairId, "hair");
+    this.loadAndAttachAccessory(this.maskId, "mask");
+  }
 
-    if (this.hatMesh) {
+  private loadAndAttachAccessory(id: string, slot: "hat" | "hair" | "mask") {
+    const parentContainer =
+      this.neck1Bone || (this.isGlbLoaded && this.playerGlbScene ? this.playerGlbScene : this.head);
+
+    if (slot === "hat" && this.hatMesh) {
       parentContainer.remove(this.hatMesh);
       this.hatMesh = null;
+    } else if (slot === "hair" && this.hairMesh) {
+      parentContainer.remove(this.hairMesh);
+      this.hairMesh = null;
+    } else if (slot === "mask" && this.maskMesh) {
+      parentContainer.remove(this.maskMesh);
+      this.maskMesh = null;
     }
 
-    if (this.hatId && this.hatId !== "-1" && this.hatId !== "undefined") {
-      const objUrl = `${BLOXITY_STATIC_CDN}/items/hats/${this.hatId}.obj`;
-      const texUrl = `${BLOXITY_STATIC_CDN}/textures/hats/${this.hatId}.png`;
+    const isValidId = Boolean(
+      id && id !== "-1" && id !== "undefined" && id !== "null" && id.trim() !== ""
+    );
 
-      this.textureLoader.load(texUrl, (texture) => {
+    if (!isValidId) return;
+
+    const objUrl = `${BLOXITY_STATIC_CDN}/items/hats/${id}.obj`;
+    const texUrl = `${BLOXITY_STATIC_CDN}/textures/hats/${id}.png`;
+
+    this.textureLoader.load(
+      texUrl,
+      (texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
         const hatMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
 
-        this.objLoader.load(objUrl, (obj) => {
-          obj.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              (child as THREE.Mesh).material = hatMat;
-              child.castShadow = true;
-            }
-          });
-          obj.position.set(0, 0.8, 0);
-          obj.scale.set(0.25, 0.25, 0.25);
-          this.hatMesh = obj;
-          parentContainer.add(this.hatMesh);
-        });
-      });
-    }
-  }
+        this.objLoader.load(
+          objUrl,
+          (obj) => {
+            obj.traverse((child) => {
+              if ((child as THREE.Mesh).isMesh) {
+                (child as THREE.Mesh).material = hatMat;
+                child.castShadow = true;
+              }
+            });
+            obj.position.set(0, 0.8, 0);
+            obj.scale.set(0.25, 0.25, 0.25);
 
-  private applyBloxityHair() {
-    const parentContainer = this.neck1Bone || (this.isGlbLoaded && this.playerGlbScene ? this.playerGlbScene : this.head);
+            if (slot === "hat") this.hatMesh = obj;
+            else if (slot === "hair") this.hairMesh = obj;
+            else if (slot === "mask") this.maskMesh = obj;
 
-    if (this.hairMesh) {
-      parentContainer.remove(this.hairMesh);
-      this.hairMesh = null;
-    }
-
-    if (this.hairId && this.hairId !== "-1" && this.hairId !== "undefined") {
-      const objUrl = `${BLOXITY_STATIC_CDN}/items/hats/${this.hairId}.obj`;
-      const texUrl = `${BLOXITY_STATIC_CDN}/textures/hats/${this.hairId}.png`;
-
-      this.textureLoader.load(texUrl, (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        const hairMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
-
-        this.objLoader.load(objUrl, (obj) => {
-          obj.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              (child as THREE.Mesh).material = hairMat;
-              child.castShadow = true;
-            }
-          });
-          obj.position.set(0, 0.8, 0);
-          obj.scale.set(0.25, 0.25, 0.25);
-          this.hairMesh = obj;
-          parentContainer.add(this.hairMesh);
-        });
-      });
-    }
+            parentContainer.add(obj);
+          },
+          undefined,
+          (err) => {
+            console.warn(`⚠️ [Bloxity] Failed to load ${slot} OBJ model (${id}):`, err);
+          }
+        );
+      },
+      undefined,
+      (err) => {
+        console.warn(`⚠️ [Bloxity] Failed to load ${slot} texture (${id}):`, err);
+      }
+    );
   }
 
   public setEquippedDivineTrail(equipped: boolean) {
@@ -452,7 +530,7 @@ export class Avatar {
       }
     }
 
-    // Walking Animation Update
+    // Walking Animation Update (Procedural movement & character tilt)
     if (this.isMoving) {
       const animSpeed = 10 * (this.speed / 10);
       this.animTimer += dt * Math.min(30, animSpeed);
@@ -471,6 +549,7 @@ export class Avatar {
 
       if (this.playerGlbScene) {
         this.playerGlbScene.rotation.z = Math.sin(this.animTimer * 0.5) * 0.05;
+        this.playerGlbScene.position.y = Math.abs(Math.sin(this.animTimer * 2)) * 0.08;
       }
     } else {
       if (!this.carriedEggTier) {
@@ -481,9 +560,20 @@ export class Avatar {
       this.rightLeg.rotation.x *= 0.8;
       if (this.playerGlbScene) {
         this.playerGlbScene.rotation.z *= 0.8;
+        this.playerGlbScene.position.y *= 0.8;
       }
       this.animTimer = 0;
     }
+  }
+
+  private updateNameTag() {
+    if (this.nameSprite) {
+      this.group.remove(this.nameSprite);
+      this.nameSprite = null;
+    }
+    this.nameSprite = this.createNameTagSprite(this.nameString, this.isLocal);
+    this.nameSprite.position.set(0, 3.2, 0);
+    this.group.add(this.nameSprite);
   }
 
   private createNameTagSprite(name: string, isLocal: boolean): THREE.Sprite {
@@ -496,11 +586,14 @@ export class Avatar {
     ctx.roundRect(8, 8, 240, 48, 12);
     ctx.fill();
 
-    ctx.font = "Bold 24px 'Segoe UI', sans-serif";
+    const isGuest = this.checkIsGuest();
+    const displayName = isGuest && !name.includes("(Guest)") ? `${name} (Guest)` : name;
+
+    ctx.font = "Bold 22px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = isLocal ? "#60a5fa" : "#ffffff";
-    ctx.fillText(name, 128, 32);
+    ctx.fillStyle = isLocal ? "#60a5fa" : isGuest ? "#9ca3af" : "#ffffff";
+    ctx.fillText(displayName, 128, 32);
 
     const texture = new THREE.CanvasTexture(canvas);
     const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });

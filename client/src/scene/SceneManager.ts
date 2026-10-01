@@ -133,7 +133,7 @@ export class SceneManager {
     speedStat?: number,
     carriedEggTier?: string,
     equippedDivineTrail?: boolean,
-    bloxityCosmetics?: { skinId?: string; hatId?: string; hairId?: string; faceId?: string; shirtId?: string; pantsId?: string }
+    bloxityCosmetics?: { skinId?: string; hatId?: string; hairId?: string; faceId?: string; shirtId?: string; pantsId?: string; maskId?: string }
   ) {
     const avatar = this.avatars.get(id);
     if (avatar) {

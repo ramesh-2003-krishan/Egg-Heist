@@ -166,6 +166,12 @@ export class NetworkManager {
 
     onAvatarChanged(() => {
       this.sendLocalBloxityCosmetics();
+      if (this.localSessionId) {
+        const localAvatar = this.sceneManager.getAvatar(this.localSessionId);
+        if (localAvatar) {
+          localAvatar.applyBloxitySkinTexture();
+        }
+      }
     });
   }
 

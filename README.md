@@ -88,6 +88,47 @@ cd client && npm run build
 
 ---
 
+## 👤 Bloxity Integration
+
+### What's Integrated:
+1. **SDK Authentication & User Profile**:
+   - HUD auth bar displays profile display name and user avatar picture (`pfp`).
+   - `Legion.SDK.auth.showAuthPopup()` triggers cross-game login popup window.
+2. **3D Character Model (`player.glb`) & SkeletonUtils Cloning**:
+   - Loads base avatar model from `https://static.bloxity.io/avatars/player.glb`.
+   - Uses `SkeletonUtils.clone` per player to preserve skinned mesh rigging while eliminating redundant HTTP requests.
+3. **Dynamic Skin Texture Synthesis**:
+   - Local player skin texture URL fetched via `Legion.SDK.avatar.getSkinTextureUrl()`.
+   - Remote player skin texture synthesized using spec: `https://api.bloxity.io/v1/avatar/skin-texture/s{skinId}[_pn{pantsId}][_sh{shirtId}][_fc{faceId}].png`.
+4. **3D Accessories (Hats, Hair, Masks)**:
+   - Attached directly to `Neck1` bone at local offset `(0, 0.8, 0)`.
+   - `.obj` models loaded from `/items/hats/{id}.obj` with `/textures/hats/{id}.png`.
+5. **Server Validation & Synchronization**:
+   - Colyseus server validates every cosmetic ID in `updateBloxityAvatar` handler (string, at most 40 chars, regex `^[A-Za-z0-9_-]*$`).
+   - Full room state synchronization broadcasts updated player look across all connected clients.
+6. **Guest & Load Fallback**:
+   - If player is a guest or model load fails, avatar falls back to box model displaying a `(Guest)` badge tag.
+
+### Slug Configuration:
+- `BLOXITY_GAME_SLUG`: `"egg-heist"` (defined in `client/src/bloxity.ts`).
+
+### How to Test Login & Avatar Model by Hand:
+1. Run `npm run dev`.
+2. Open **Tab 1** (`http://localhost:5173`).
+3. **Guest Fallback Test**:
+   - Without logging in, observe your avatar uses the box avatar fallback with `Player_xxxx (Guest)` overhead name tag.
+4. **Login & 3D Character Model Test**:
+   - Click **"Log In with Bloxity"** in the top-right HUD.
+   - Complete authentication in popup window.
+   - Observe HUD avatar picture and name update instantly.
+   - Observe character model converts from box avatar to 3D Bloxity character model (`player.glb`), applying skin texture and equipped accessories on the `Neck1` bone.
+5. **Multiplayer Remote Sync Test**:
+   - Open **Tab 2** (`http://localhost:5173`).
+   - In Tab 1, equip or update avatar cosmetics via Bloxity SDK.
+   - In Tab 2, observe Tab 1 player's 3D Bloxity model, skin texture, and accessories update dynamically in real time.
+
+---
+
 ## 📁 Architecture
 
 ```
