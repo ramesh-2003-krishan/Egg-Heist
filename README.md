@@ -36,6 +36,22 @@ A Roblox-inspired 3D real-time multiplayer browser game built with **Three.js** 
 
 ---
 
+## 🎨 Cartoony Roblox-Style HUD & UI
+
+The user interface has been restyled to match a bright, cartoony Roblox aesthetic:
+- **Typography**: Google Fonts ("Lilita One" & "Fredoka") with thick text stroke (`-webkit-text-stroke`).
+- **Top-Left Bar**: Quick action icons (⚙️ Settings, 🎒 Backpack, 💬 Chat) + Fading **Event Feed** for server announcements and rare egg spawn alerts.
+- **Top-Center Header**: Big outlined 3D text `EGG HEIST!`.
+- **Top-Right Leaderboard**: Live room leaderboard with columns (`People`, `Money/s`, `Speed`), sorted by `Money/s`, with local player highlight & toggle close `(X)`.
+- **Left-Middle Buttons**: Green **Shop** button (🛒 with red `!` badge when upgrades are affordable) and Cyan **Index** button (📖 for Egg Tiers & Pet Rarities lookup).
+- **Right-Middle Buttons**: Red **Egg** status button (🥚) and Orange **Paw** active pets drawer button (🐾).
+- **Bottom-Left Stats**: Large **Speed** (👟) and **Money** (💵) with dynamic green `+$X/s` passive income rate indicator.
+- **Bottom-Center Hotbar**: 3-slot hotbar (1, 2, 3) displaying carried egg and tools with active slot highlight.
+- **Bottom-Right Special Egg Chip**: Countdown chip (🌙) displaying `next special egg in MMm SSs`, driven by server timer.
+- **Tutorial Guidance Arrows**: Red bouncing CSS arrows pointing to the treadmill (until first used) and incubator (until first egg deposited).
+
+---
+
 ## 🚀 Quick Start & Development
 
 ### 1. Install Dependencies

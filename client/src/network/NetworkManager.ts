@@ -20,10 +20,13 @@ import {
   BloxityUser,
 } from "../bloxity";
 
+import { UIManager } from "../ui/UIManager";
+
 export class NetworkManager {
   private client: Client;
   private room: Room<GameState> | null = null;
   private sceneManager: SceneManager;
+  private uiManager: UIManager;
 
   private statusElement: HTMLElement | null;
   private playerCountElement: HTMLElement | null;
@@ -91,6 +94,9 @@ export class NetworkManager {
     this.bloxityNameSpan = document.getElementById("bloxity-name");
     this.bloxityLoginBtn = document.getElementById("bloxity-login-btn");
     this.bloxityLogoutBtn = document.getElementById("bloxity-logout-btn");
+
+    // Initialize UI Manager
+    this.uiManager = new UIManager();
 
     // Initialize Bloxity SDK
     initBloxity();
@@ -241,6 +247,15 @@ export class NetworkManager {
         this.statusElement.className = "connected";
       }
 
+      // Server Announcement and Special Egg Countdown listeners
+      this.room.onMessage("serverAnnouncement", (data: { text: string; rarity?: string }) => {
+        this.uiManager.eventFeed.addMessage(data.text, data.rarity || "info");
+      });
+
+      this.room.onMessage("specialEggCountdown", (data: { timeRemaining: number }) => {
+        this.uiManager.updateCountdownTimer(data.timeRemaining);
+      });
+
       const updateLocalHUD = (player: Player) => {
         if (this.speedElement) {
           this.speedElement.textContent = `⚡ Speed: ${(player.speed || 10).toFixed(1)} (${(player.speedStat || 1).toFixed(1)}x)`;
@@ -362,7 +377,10 @@ export class NetworkManager {
                 pantsId: player.pantsId,
               }
             );
-            if (sessionId === this.localSessionId) updateLocalHUD(player);
+            if (sessionId === this.localSessionId) {
+              updateLocalHUD(player);
+              this.uiManager.updatePlayerHUD(player, state.players as unknown as Map<string, Player>, this.localSessionId);
+            }
           });
           this.updatePlayerCount();
         }

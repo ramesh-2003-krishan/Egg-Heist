@@ -20,6 +20,8 @@ export class GameRoom extends Room<GameState> {
   private playerInputs: Map<string, MoveInput> = new Map();
   private baseSlots: (string | null)[] = new Array(GAME_CONFIG.MAX_BASE_SLOTS).fill(null);
   private spawnTimer: number = 0;
+  private specialEggTimer: number = 124; // 2m 4s initial
+  private countdownTickTimer: number = 0;
   private nextEggId: number = 1;
   private nextPetId: number = 1;
 
@@ -176,6 +178,21 @@ export class GameRoom extends Room<GameState> {
 
   private update(deltaTimeMs: number) {
     const dt = deltaTimeMs / 1000;
+
+    // Special Egg Countdown Timer
+    this.specialEggTimer -= dt;
+    this.countdownTickTimer += dt;
+    if (this.countdownTickTimer >= 1.0) {
+      this.countdownTickTimer = 0;
+      this.broadcast("specialEggCountdown", { timeRemaining: Math.max(0, Math.floor(this.specialEggTimer)) });
+    }
+
+    if (this.specialEggTimer <= 0) {
+      this.specialEggTimer = 180;
+      const rareTiers = ["secret", "eternal", "divine"];
+      const chosenTier = rareTiers[Math.floor(Math.random() * rareTiers.length)];
+      this.spawnRandomMapEgg(chosenTier);
+    }
 
     // 1. Spawner
     this.spawnTimer += dt;
@@ -443,8 +460,8 @@ export class GameRoom extends Room<GameState> {
     return pet;
   }
 
-  private spawnRandomMapEgg() {
-    const tier = this.rollRandomEggTier();
+  private spawnRandomMapEgg(forcedTier?: string) {
+    const tier = forcedTier || this.rollRandomEggTier();
     const egg = new Egg();
     egg.id = `map_egg_${this.nextEggId++}`;
     egg.tier = tier;
@@ -456,6 +473,15 @@ export class GameRoom extends Room<GameState> {
     egg.z = Math.sin(angle) * r;
 
     this.state.mapEggs.set(egg.id, egg);
+
+    if (["secret", "eternal", "divine"].includes(tier)) {
+      const tierConfig = EGG_TIERS[tier];
+      const tierName = tierConfig ? tierConfig.name : tier.toUpperCase();
+      this.broadcast("serverAnnouncement", {
+        text: `✨ A rare ${tierName} Egg spawned in the world!`,
+        rarity: tier,
+      });
+    }
   }
 
   private dropEggOnGround(x: number, z: number, tier: string, dropperId: string) {

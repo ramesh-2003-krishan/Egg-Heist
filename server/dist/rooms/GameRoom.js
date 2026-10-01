@@ -11,6 +11,8 @@ class GameRoom extends colyseus_1.Room {
         this.playerInputs = new Map();
         this.baseSlots = new Array(config_1.GAME_CONFIG.MAX_BASE_SLOTS).fill(null);
         this.spawnTimer = 0;
+        this.specialEggTimer = 124; // 2m 4s initial
+        this.countdownTickTimer = 0;
         this.nextEggId = 1;
         this.nextPetId = 1;
     }
@@ -147,6 +149,19 @@ class GameRoom extends colyseus_1.Room {
     }
     update(deltaTimeMs) {
         const dt = deltaTimeMs / 1000;
+        // Special Egg Countdown Timer
+        this.specialEggTimer -= dt;
+        this.countdownTickTimer += dt;
+        if (this.countdownTickTimer >= 1.0) {
+            this.countdownTickTimer = 0;
+            this.broadcast("specialEggCountdown", { timeRemaining: Math.max(0, Math.floor(this.specialEggTimer)) });
+        }
+        if (this.specialEggTimer <= 0) {
+            this.specialEggTimer = 180;
+            const rareTiers = ["secret", "eternal", "divine"];
+            const chosenTier = rareTiers[Math.floor(Math.random() * rareTiers.length)];
+            this.spawnRandomMapEgg(chosenTier);
+        }
         // 1. Spawner
         this.spawnTimer += dt;
         if (this.spawnTimer >= config_1.GAME_CONFIG.SPAWN_INTERVAL_SEC &&
@@ -374,8 +389,8 @@ class GameRoom extends colyseus_1.Room {
         pet.moneyPerSec = 5.0 * tierMult * sizeMult * mutMult;
         return pet;
     }
-    spawnRandomMapEgg() {
-        const tier = this.rollRandomEggTier();
+    spawnRandomMapEgg(forcedTier) {
+        const tier = forcedTier || this.rollRandomEggTier();
         const egg = new GameState_1.Egg();
         egg.id = `map_egg_${this.nextEggId++}`;
         egg.tier = tier;
@@ -385,6 +400,14 @@ class GameRoom extends colyseus_1.Room {
         egg.y = 0;
         egg.z = Math.sin(angle) * r;
         this.state.mapEggs.set(egg.id, egg);
+        if (["secret", "eternal", "divine"].includes(tier)) {
+            const tierConfig = config_1.EGG_TIERS[tier];
+            const tierName = tierConfig ? tierConfig.name : tier.toUpperCase();
+            this.broadcast("serverAnnouncement", {
+                text: `✨ A rare ${tierName} Egg spawned in the world!`,
+                rarity: tier,
+            });
+        }
     }
     dropEggOnGround(x, z, tier, dropperId) {
         const egg = new GameState_1.Egg();

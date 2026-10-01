@@ -4,74 +4,230 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Egg Heist - 3D Multiplayer Game</title>
+    <!-- Google Fonts: Lilita One & Fredoka -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Lilita+One&display=swap"
+      rel="stylesheet"
+    />
     <!-- Bloxity SDK -->
     <script src="https://sdk.bloxity.io/legion-sdk.min.js"></script>
-    <script type="module" crossorigin src="/assets/index-49jRrsA4.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-SoaTrSxG.css">
+    <script type="module" crossorigin src="/assets/index-BePgYrHV.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Bw92C-e_.css">
   </head>
   <body>
     <div id="app"></div>
+
     <div id="ui-container">
-      <div id="hud">
-        <!-- Bloxity Auth Profile Card -->
-        <div id="bloxity-profile" class="bloxity-card">
-          <div id="bloxity-logged-out" class="bloxity-auth-box">
-            <button id="bloxity-login-btn" class="bloxity-btn">🌐 Log in with Bloxity</button>
+      <!-- 1. TOP-LEFT ICON ROW & EVENT FEED -->
+      <div id="top-left-bar">
+        <div class="top-left-icons">
+          <button id="open-settings-btn" class="icon-btn btn-yellow" title="Settings">⚙️</button>
+          <button id="open-backpack-btn" class="icon-btn btn-blue" title="Backpack">🎒</button>
+          <button id="open-chat-btn" class="icon-btn btn-purple" title="Chat">💬</button>
+        </div>
+
+        <!-- Event Feed Fading Announcements -->
+        <div id="event-feed-container" class="event-feed"></div>
+      </div>
+
+      <!-- 2. TOP-CENTER GAME TITLE -->
+      <div id="top-center-header">
+        <h1 class="cartoony-game-title">EGG HEIST!</h1>
+      </div>
+
+      <!-- 3. TOP-RIGHT LEADERBOARD -->
+      <div id="leaderboard-panel" class="cartoony-card leaderboard-card">
+        <div class="lb-header">
+          <span id="leaderboard-player-count" class="lb-title">People (0)</span>
+          <button id="leaderboard-toggle-btn" class="lb-close-btn">✕</button>
+        </div>
+        <div class="lb-column-titles">
+          <span>Rank & Player</span>
+          <span>Money/s</span>
+          <span>Speed</span>
+        </div>
+        <div id="leaderboard-list" class="lb-list">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- 4. LEFT-MIDDLE ACTION BUTTONS (SHOP & INDEX) -->
+      <div id="left-middle-bar">
+        <button id="open-shop-btn" class="action-btn btn-green">
+          <span class="btn-icon">🛒</span>
+          <span class="btn-label">SHOP</span>
+          <span id="shop-badge" class="badge-alert hidden">!</span>
+        </button>
+        <button id="open-index-btn" class="action-btn btn-cyan">
+          <span class="btn-icon">📖</span>
+          <span class="btn-label">INDEX</span>
+        </button>
+      </div>
+
+      <!-- 5. RIGHT-MIDDLE ACTION BUTTONS (EGG & PAW) -->
+      <div id="right-middle-bar">
+        <button id="btn-carried-egg" class="action-btn btn-red">
+          <span class="btn-icon">🥚</span>
+          <span class="btn-label">EGGS</span>
+        </button>
+        <button id="toggle-pets-btn" class="action-btn btn-orange">
+          <span class="btn-icon">🐾</span>
+          <span class="btn-label">PETS</span>
+        </button>
+      </div>
+
+      <!-- 6. BOTTOM-LEFT STATS (SPEED & MONEY) -->
+      <div id="bottom-left-stats">
+        <div class="stat-card stat-speed">
+          <span class="stat-icon">👟</span>
+          <span id="hud-speed-val" class="stat-value">10.0</span>
+        </div>
+        <div class="stat-card stat-money">
+          <span class="stat-icon">💵</span>
+          <span id="hud-money-val" class="stat-value">$0</span>
+          <span id="hud-passive-income" class="passive-rate-tag hidden">+$0/s</span>
+        </div>
+      </div>
+
+      <!-- 7. BOTTOM-CENTER HOTBAR -->
+      <div id="bottom-center-hotbar" class="cartoony-hotbar">
+        <div class="hotbar-slot active" data-slot="1">
+          <span class="slot-num">1</span>
+          <div id="hotbar-egg-slot" class="slot-content">
+            <span class="hotbar-icon">🥚</span>
+            <span class="hotbar-empty">Empty</span>
           </div>
-          <div id="bloxity-logged-in" class="bloxity-user-box hidden">
-            <img id="bloxity-pfp" class="bloxity-avatar-img" src="" alt="Profile" />
-            <div class="bloxity-user-info">
-              <span id="bloxity-name" class="bloxity-username">Guest</span>
-              <button id="bloxity-logout-btn" class="bloxity-logout">Log out</button>
+        </div>
+        <div class="hotbar-slot" data-slot="2">
+          <span class="slot-num">2</span>
+          <div class="slot-content">
+            <span class="hotbar-icon">👟</span>
+            <span>Speed Boots</span>
+          </div>
+        </div>
+        <div class="hotbar-slot" data-slot="3">
+          <span class="slot-num">3</span>
+          <div class="slot-content">
+            <span class="hotbar-icon">🐣</span>
+            <span>Incubator</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8. BOTTOM-RIGHT SPECIAL EGG COUNTDOWN CHIP -->
+      <div id="bottom-right-countdown" class="cartoony-chip">
+        <span class="chip-icon">🌙</span>
+        <span id="countdown-timer-text" class="chip-text">next special egg in 2m 4s</span>
+      </div>
+
+      <!-- 9. TUTORIAL ARROWS -->
+      <div id="tutorial-treadmill-arrow" class="bouncing-arrow arrow-treadmill hidden">
+        <span class="arrow-shape">⬇️</span>
+        <span class="arrow-label">STEP HERE TO GAIN SPEED!</span>
+      </div>
+      <div id="tutorial-incubator-arrow" class="bouncing-arrow arrow-incubator hidden">
+        <span class="arrow-shape">⬇️</span>
+        <span class="arrow-label">DEPOSIT EGG HERE!</span>
+      </div>
+
+      <!-- Active Pets Drawer Container -->
+      <div id="pets-list-container" class="pets-drawer hidden">
+        <div id="pets-count-title" class="drawer-title">🐾 Active Pets (0/6)</div>
+        <div id="pets-list-inner" class="pets-inner-list">
+          <div class="empty-pets">No pets hatched yet! Hatch eggs in incubator.</div>
+        </div>
+      </div>
+
+      <!-- Hidden Connection Status for Debugging -->
+      <div id="connection-status" class="hidden">Connected</div>
+      <div id="player-count" class="hidden">0</div>
+      <div id="treadmill-indicator" class="hidden"></div>
+      <div id="carried-egg" class="hidden"></div>
+      <div id="incubator-info" class="hidden"></div>
+
+      <!-- MODALS -->
+
+      <!-- Settings Modal -->
+      <div id="settings-modal" class="modal-overlay hidden">
+        <div class="cartoony-modal settings-modal-card">
+          <div class="modal-header">
+            <span class="modal-title">⚙️ SETTINGS</span>
+            <button id="settings-close-btn" class="modal-close">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="setting-row">
+              <label for="volume-slider">🔊 Master Audio Volume:</label>
+              <input type="range" id="volume-slider" min="0" max="100" value="80" class="cartoony-slider" />
+            </div>
+
+            <!-- Bloxity Auth Box inside Settings -->
+            <div id="bloxity-profile" class="setting-row bloxity-setting-box">
+              <div id="bloxity-logged-out" class="bloxity-auth-box">
+                <button id="bloxity-login-btn" class="cartoony-btn btn-blue">🌐 Log in with Bloxity</button>
+              </div>
+              <div id="bloxity-logged-in" class="bloxity-user-box hidden">
+                <img id="bloxity-pfp" class="bloxity-avatar-img" src="" alt="Profile" />
+                <div class="bloxity-user-info">
+                  <span id="bloxity-name" class="bloxity-username">Guest</span>
+                  <button id="bloxity-logout-btn" class="cartoony-btn btn-red">Log out</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-row hotkeys-info">
+              <div>⌨️ <strong>Hotkeys</strong>:</div>
+              <div>• <strong>W A S D / Arrow Keys</strong>: Move Avatar</div>
+              <div>• <strong>B / E</strong>: Toggle Shop Modal</div>
+              <div>• <strong>1, 2, 3</strong>: Hotbar Slot Selection</div>
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="hud-header-row">
-          <div class="hud-title">🥚 EGG HEIST</div>
-          <button id="open-shop-btn" class="hud-btn">🛒 SHOP [B]</button>
+      <!-- Index Modal -->
+      <div id="index-modal" class="modal-overlay hidden">
+        <div class="cartoony-modal index-modal-card">
+          <div class="modal-header">
+            <span class="modal-title">📖 DISCOVERY INDEX</span>
+            <button id="index-close-btn" class="modal-close">✕</button>
+          </div>
+          <div id="index-content" class="modal-body index-body">
+            <!-- Rendered dynamically -->
+          </div>
         </div>
-        <div id="connection-status">Connecting to server...</div>
-        <div id="player-count">Players: 0</div>
+      </div>
 
-        <div class="hud-stats">
-          <div id="player-speed" class="stat-item">⚡ Speed: 10.0</div>
-          <div id="player-money" class="stat-item">💰 Money: $0</div>
-          <div id="carried-egg" class="stat-item">🥚 Egg: None</div>
-          <div id="incubator-info" class="stat-item">🐣 Incubator: 0/3</div>
-          <div id="treadmill-indicator" class="treadmill-badge hidden">🔥 On treadmill: +0.5 speed/s</div>
-        </div>
-
-        <div class="hud-pets-header">
-          <div id="pets-count-title" class="hud-sub-title">🐾 Active Pets (0/6)</div>
-          <button id="toggle-pets-btn" class="hud-mini-btn">▼</button>
-        </div>
-        <div id="pets-list-container" class="pets-list">
-          <div class="empty-pets">No pets hatched yet! Hatch eggs in incubator.</div>
-        </div>
-
-        <div class="controls-hint">
-          <span><strong>W A S D</strong> / <strong>Arrows</strong> to move</span>
-          <span>Press <strong>B</strong> for Shop</span>
+      <!-- Egg Status Overlay Modal -->
+      <div id="egg-status-modal" class="modal-overlay hidden">
+        <div class="cartoony-modal egg-status-card">
+          <div class="modal-header">
+            <span class="modal-title">🥚 EGG STATUS</span>
+            <button id="egg-status-close-btn" class="modal-close">✕</button>
+          </div>
+          <div id="egg-status-content" class="modal-body">
+            <!-- Rendered dynamically -->
+          </div>
         </div>
       </div>
 
       <!-- Celebration Modal -->
       <div id="reward-modal" class="modal-overlay hidden">
-        <div class="modal-card">
+        <div class="cartoony-modal celebration-card">
           <div class="modal-header">✨ YOU GOT... ✨</div>
           <div id="reward-rarity" class="modal-rarity">DIVINE</div>
           <div id="reward-title" class="modal-title">Divine Rainbow Trail</div>
-          <button id="reward-close-btn" class="modal-btn">AWESOME!</button>
+          <button id="reward-close-btn" class="cartoony-btn btn-green">AWESOME!</button>
         </div>
       </div>
 
       <!-- Shop Modal -->
       <div id="shop-modal" class="modal-overlay hidden">
-        <div class="shop-card">
-          <div class="shop-header">
-            <div class="shop-title">🛒 EGG HEIST SHOP</div>
-            <button id="shop-close-btn" class="shop-close">✕</button>
+        <div class="cartoony-modal shop-card">
+          <div class="modal-header">
+            <span class="modal-title">🛒 EGG HEIST SHOP</span>
+            <button id="shop-close-btn" class="modal-close">✕</button>
           </div>
           <div class="shop-tabs">
             <button class="shop-tab active" data-tab="treadmills">⚡ Treadmills</button>
@@ -84,5 +240,6 @@
         </div>
       </div>
     </div>
+
   </body>
 </html>
