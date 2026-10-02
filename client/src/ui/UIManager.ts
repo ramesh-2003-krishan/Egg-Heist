@@ -138,7 +138,13 @@ export class UIManager {
       }
     }
 
-    // 5. Carried Egg & Incubator Panel update
+    // 5. Trap Count Update
+    const trapCountEl = document.getElementById("hotbar-trap-count");
+    if (trapCountEl) {
+      trapCountEl.textContent = `(x${player.trapCount ?? 0})`;
+    }
+
+    // 6. Carried Egg & Incubator Panel update
     const currentEggTier = player.carriedEggTier || "";
     const isEggDeposited = this.previousEggTier !== "" && currentEggTier === "";
     this.previousEggTier = currentEggTier;
@@ -147,7 +153,7 @@ export class UIManager {
     if (carriedEggSlot) {
       if (currentEggTier && EGG_TIERS[currentEggTier]) {
         const tierConfig = EGG_TIERS[currentEggTier];
-        carriedEggSlot.innerHTML = `<span class="hotbar-icon">🥚</span> <span style="color: ${tierConfig.color}">${tierConfig.name}</span>`;
+        carriedEggSlot.innerHTML = `<span class="hotbar-icon">🥚</span> <span style="color: ${tierConfig.color}">${tierConfig.name}</span> <span style="font-size: 10px; color: #cbd5e1;">[G / V]</span>`;
       } else {
         carriedEggSlot.innerHTML = `<span class="hotbar-icon">🥚</span> <span class="hotbar-empty">Empty</span>`;
       }
@@ -176,8 +182,30 @@ export class UIManager {
       `;
     }
 
-    // 6. Tutorial Arrows State Update
+    // 7. Tutorial Arrows State Update
     this.tutorialArrows.updateState(Boolean(player.onTreadmill), Boolean(currentEggTier), isEggDeposited);
+  }
+
+  public updateDayNightBanner(progress: number) {
+    const iconEl = document.getElementById("day-night-icon");
+    const textEl = document.getElementById("day-night-text");
+    if (!iconEl || !textEl) return;
+
+    if (progress < 0.4) {
+      iconEl.textContent = "☀️";
+      const secsLeft = Math.floor((0.4 - progress) * 120);
+      textEl.textContent = `DAYTIME (${secsLeft}s)`;
+    } else if (progress < 0.5) {
+      iconEl.textContent = "🌅";
+      textEl.textContent = "SUNSET";
+    } else if (progress < 0.9) {
+      iconEl.textContent = "🌙";
+      const secsLeft = Math.floor((0.9 - progress) * 120);
+      textEl.textContent = `NIGHTTIME (${secsLeft}s)`;
+    } else {
+      iconEl.textContent = "🌅";
+      textEl.textContent = "SUNRISE";
+    }
   }
 
   public updateCountdownTimer(seconds: number) {

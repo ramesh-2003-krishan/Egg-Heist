@@ -135,8 +135,22 @@ export class NetworkManager {
     }
 
     window.addEventListener("keydown", (e) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
       if (e.key === "b" || e.key === "B" || e.key === "e" || e.key === "E") {
         this.toggleShopModal();
+      } else if (e.key === "1") {
+        this.useBat();
+      } else if (e.key === "2") {
+        this.placeTrap();
+      } else if (e.key === "g" || e.key === "G") {
+        this.dropEgg();
+      } else if (e.key === "v" || e.key === "V") {
+        this.sellEgg();
+      } else if (e.key === "f" || e.key === "F") {
+        this.fusePets("common");
+        this.fusePets("rare");
+        this.fusePets("epic");
       }
     });
 
@@ -219,6 +233,17 @@ export class NetworkManager {
       return this.room.state.players as unknown as Map<string, Player>;
     }
     return new Map();
+  }
+
+  public getMapEggs(): Map<string, any> {
+    if (this.room && this.room.state && this.room.state.mapEggs) {
+      return this.room.state.mapEggs as unknown as Map<string, any>;
+    }
+    return new Map();
+  }
+
+  public getDayNightProgress(): number {
+    return (this.room?.state as any)?.dayNightProgress || 0;
   }
 
   public async connect(): Promise<void> {
@@ -348,6 +373,16 @@ export class NetworkManager {
           this.sceneManager.syncMapEggs(state.mapEggs as unknown as Map<string, any>);
         }
 
+        if (state.placedTraps) {
+          this.sceneManager.syncTraps(state.placedTraps as unknown as Map<string, any>);
+        }
+
+        if (state.chasingChickens) {
+          this.sceneManager.syncChasingChickens(state.chasingChickens as unknown as Map<string, any>);
+        }
+
+        this.uiManager.updateDayNightBanner(state.dayNightProgress || 0);
+
         if (state.players) {
           this.sceneManager.syncPets(state.players as unknown as Map<string, any>);
 
@@ -375,7 +410,8 @@ export class NetworkManager {
                 faceId: player.faceId,
                 shirtId: player.shirtId,
                 pantsId: player.pantsId,
-              }
+              },
+              player.trappedTimer
             );
             if (sessionId === this.localSessionId) {
               updateLocalHUD(player);
@@ -498,6 +534,34 @@ export class NetworkManager {
     if (this.room) {
       this.room.send("move", { moveX, moveZ, rotationY });
     }
+  }
+
+  public dropEgg() {
+    if (this.room) this.room.send("dropEgg");
+  }
+
+  public sellEgg() {
+    if (this.room) this.room.send("sellEgg");
+  }
+
+  public sellPet(petId: string) {
+    if (this.room) this.room.send("sellPet", petId);
+  }
+
+  public fusePets(rarity: string) {
+    if (this.room) this.room.send("fusePets", rarity);
+  }
+
+  public useBat() {
+    if (this.room) this.room.send("useBat");
+  }
+
+  public placeTrap() {
+    if (this.room) this.room.send("placeTrap");
+  }
+
+  public buyTraps() {
+    if (this.room) this.room.send("buyTraps");
   }
 
   private updatePlayerCount() {

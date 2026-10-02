@@ -20,6 +20,24 @@ export class Egg extends Schema {
   @type("number") hatchTimeRemaining: number = 0;
   @type("number") dropCooldown: number = 0;
   @type("string") lastDroppedBy: string = "";
+  @type("boolean") hasChicken: boolean = false;
+}
+
+export class Trap extends Schema {
+  @type("string") id: string = "";
+  @type("string") ownerId: string = "";
+  @type("number") x: number = 0;
+  @type("number") y: number = 0;
+  @type("number") z: number = 0;
+}
+
+export class ChasingChicken extends Schema {
+  @type("string") id: string = "";
+  @type("string") targetPlayerId: string = "";
+  @type("number") x: number = 0;
+  @type("number") y: number = 0;
+  @type("number") z: number = 0;
+  @type("number") lifetime: number = 4.0;
 }
 
 export class Player extends Schema {
@@ -38,6 +56,11 @@ export class Player extends Schema {
   @type(Egg) carriedEgg: Egg | null = null;
   @type([Egg]) incubatorEggs = new ArraySchema<Egg>();
   @type([Pet]) pets = new ArraySchema<Pet>();
+
+  // Mechanics Fields
+  @type("number") batCooldown: number = 0;
+  @type("number") trapCount: number = 3;
+  @type("number") trappedTimer: number = 0;
 
   // Shop Upgrades
   @type("number") treadmillTier: number = 1;
@@ -63,4 +86,7 @@ export class Player extends Schema {
 export class GameState extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>();
   @type({ map: Egg }) mapEggs = new MapSchema<Egg>();
+  @type({ map: Trap }) placedTraps = new MapSchema<Trap>();
+  @type({ map: ChasingChicken }) chasingChickens = new MapSchema<ChasingChicken>();
+  @type("number") dayNightProgress: number = 0;
 }

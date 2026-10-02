@@ -566,39 +566,60 @@ export class Avatar {
     }
   }
 
+  public trappedTimer: number = 0;
+  private currentTrappedState: boolean = false;
+
   private updateNameTag() {
     if (this.nameSprite) {
       this.group.remove(this.nameSprite);
       this.nameSprite = null;
     }
-    this.nameSprite = this.createNameTagSprite(this.nameString, this.isLocal);
+    this.nameSprite = this.createNameTagSprite(this.nameString, this.isLocal, this.trappedTimer);
     this.nameSprite.position.set(0, 3.2, 0);
     this.group.add(this.nameSprite);
   }
 
-  private createNameTagSprite(name: string, isLocal: boolean): THREE.Sprite {
+  private createNameTagSprite(name: string, isLocal: boolean, trappedTime: number = 0): THREE.Sprite {
     const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 64;
+    canvas.width = 300;
+    canvas.height = 80;
     const ctx = canvas.getContext("2d")!;
 
-    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.roundRect(8, 8, 240, 48, 12);
-    ctx.fill();
+    if (trappedTime > 0) {
+      // Trapped Banner
+      ctx.fillStyle = "rgba(220, 38, 38, 0.95)";
+      ctx.roundRect(8, 8, 284, 64, 14);
+      ctx.fill();
 
-    const isGuest = this.checkIsGuest();
-    const displayName = isGuest && !name.includes("(Guest)") ? `${name} (Guest)` : name;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#fef08a";
+      ctx.roundRect(8, 8, 284, 64, 14);
+      ctx.stroke();
 
-    ctx.font = "Bold 22px 'Segoe UI', sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = isLocal ? "#60a5fa" : isGuest ? "#9ca3af" : "#ffffff";
-    ctx.fillText(displayName, 128, 32);
+      ctx.font = "Bold 24px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(`🚨 TRAPPED (${trappedTime.toFixed(1)}s)`, 150, 40);
+    } else {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.roundRect(8, 8, 284, 64, 14);
+      ctx.fill();
+
+      const isGuest = this.checkIsGuest();
+      const displayName = isGuest && !name.includes("(Guest)") ? `${name} (Guest)` : name;
+
+      ctx.font = "Bold 22px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = isLocal ? "#60a5fa" : isGuest ? "#9ca3af" : "#ffffff";
+      ctx.fillText(displayName, 150, 40);
+    }
 
     const texture = new THREE.CanvasTexture(canvas);
     const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
     const sprite = new THREE.Sprite(spriteMaterial);
-    sprite.scale.set(2.4, 0.6, 1);
+    sprite.scale.set(3.0, 0.8, 1);
     return sprite;
   }
 }

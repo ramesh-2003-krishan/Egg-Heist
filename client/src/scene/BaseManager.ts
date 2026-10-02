@@ -151,6 +151,33 @@ export class BaseManager {
 
       baseGroup.add(angelicGroup);
 
+      // Fuse Machine Zone
+      const fuseGroup = new THREE.Group();
+      fuseGroup.position.set(
+        GAME_CONFIG.FUSE_MACHINE_OFFSET.x,
+        0.3,
+        GAME_CONFIG.FUSE_MACHINE_OFFSET.z
+      );
+
+      const fuseBaseGeo = new THREE.BoxGeometry(2.0, 0.4, 2.0);
+      const fuseBaseMat = new THREE.MeshStandardMaterial({ color: 0x1e1b4b, roughness: 0.3, metalness: 0.8 });
+      const fuseBase = new THREE.Mesh(fuseBaseGeo, fuseBaseMat);
+      fuseBase.castShadow = true;
+      fuseGroup.add(fuseBase);
+
+      const fuseCoreGeo = new THREE.CylinderGeometry(0.6, 0.6, 1.2, 16);
+      const fuseCoreMat = new THREE.MeshStandardMaterial({ color: 0xa855f7, roughness: 0.1, metalness: 0.5, emissive: 0x581c87 });
+      const fuseCore = new THREE.Mesh(fuseCoreGeo, fuseCoreMat);
+      fuseCore.position.y = 0.8;
+      fuseCore.castShadow = true;
+      fuseGroup.add(fuseCore);
+
+      const fuseSign = this.createFuseMachineSprite();
+      fuseSign.position.set(0, 2.0, 0);
+      fuseGroup.add(fuseSign);
+
+      baseGroup.add(fuseGroup);
+
       // Incubator Zone
       const incubatorGroup = new THREE.Group();
       incubatorGroup.position.set(
@@ -203,6 +230,9 @@ export class BaseManager {
         currentBaseTier: 1,
       });
     });
+
+    // Create 3D Market Stall at Map Center (0,0)
+    this.createMarketStall();
   }
 
   public update(dt: number, playersMap: Map<string, any>) {
@@ -317,6 +347,131 @@ export class BaseManager {
     const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
     const sprite = new THREE.Sprite(spriteMaterial);
     sprite.scale.set(3.6, 1.2, 1);
+    return sprite;
+  }
+
+  private createMarketStall() {
+    const stallGroup = new THREE.Group();
+    stallGroup.position.set(GAME_CONFIG.MARKET_STALL_POS.x, 0, GAME_CONFIG.MARKET_STALL_POS.z);
+
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+    const counterGeo = new THREE.BoxGeometry(4.2, 1.2, 2.2);
+    const counter = new THREE.Mesh(counterGeo, woodMat);
+    counter.position.y = 0.6;
+    counter.castShadow = true;
+    counter.receiveShadow = true;
+    stallGroup.add(counter);
+
+    // 4 Corner Poles
+    const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.8);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
+    const positions = [
+      { x: -2.0, z: -1.0 },
+      { x: 2.0, z: -1.0 },
+      { x: -2.0, z: 1.0 },
+      { x: 2.0, z: 1.0 },
+    ];
+    positions.forEach((p) => {
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.set(p.x, 1.4, p.z);
+      pole.castShadow = true;
+      stallGroup.add(pole);
+    });
+
+    // Striped Awning Roof
+    const roofTexture = this.createStripedAwningTexture();
+    const roofGeo = new THREE.BoxGeometry(4.6, 0.3, 2.6);
+    const roofMat = new THREE.MeshStandardMaterial({ map: roofTexture, roughness: 0.4 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.y = 2.8;
+    roof.castShadow = true;
+    stallGroup.add(roof);
+
+    // Overhead Sign Sprite
+    const signSprite = this.createMarketSignSprite();
+    signSprite.position.set(0, 3.5, 0);
+    stallGroup.add(signSprite);
+
+    this.group.add(stallGroup);
+  }
+
+  private createStripedAwningTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 128; i += 32) {
+      ctx.fillRect(i, 0, 16, 128);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 2);
+    return tex;
+  }
+
+  private createMarketSignSprite(): THREE.Sprite {
+    const canvas = document.createElement("canvas");
+    canvas.width = 384;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+
+    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+    ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 16);
+    ctx.fill();
+
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#eab308";
+    ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 16);
+    ctx.stroke();
+
+    ctx.font = "Bold 26px 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#facc15";
+    ctx.fillText("🛒 SELL STALL", canvas.width / 2, 45);
+
+    ctx.font = "Bold 18px 'Segoe UI', sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("Sell Eggs & Pets for Cash!", canvas.width / 2, 85);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(4.0, 1.33, 1);
+    return sprite;
+  }
+
+  private createFuseMachineSprite(): THREE.Sprite {
+    const canvas = document.createElement("canvas");
+    canvas.width = 384;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+
+    ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+    ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 16);
+    ctx.fill();
+
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#a855f7";
+    ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 16);
+    ctx.stroke();
+
+    ctx.font = "Bold 24px 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#c084fc";
+    ctx.fillText("✨ PET FUSER", canvas.width / 2, 45);
+
+    ctx.font = "Bold 17px 'Segoe UI', sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("3 Same Pets -> 1 Tier Up", canvas.width / 2, 85);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(3.2, 1.06, 1);
     return sprite;
   }
 

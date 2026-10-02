@@ -182,6 +182,27 @@ button, input, select, .cartoony-card, .cartoony-hotbar, .cartoony-chip, .modal-
   animation: titlePulse 3s infinite ease-in-out;
 }
 
+.day-night-banner {
+  margin: 6px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 2.5px solid #f59e0b;
+  border-radius: 14px;
+  padding: 4px 14px;
+  width: fit-content;
+  font-family: var(--font-cartoony);
+  font-size: 15px;
+  color: #fde047;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.day-night-banner .banner-icon {
+  font-size: 18px;
+}
+
 @keyframes titlePulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.04); }

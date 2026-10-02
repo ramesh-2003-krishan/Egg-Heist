@@ -1,5 +1,5 @@
 import { Room, Client } from "colyseus";
-import { GameState, Player, Egg, Pet } from "./schema/GameState";
+import { GameState, Player, Egg, Pet, Trap, ChasingChicken } from "./schema/GameState";
 import {
   GAME_CONFIG,
   EGG_TIERS,
@@ -7,6 +7,7 @@ import {
   TREADMILL_UPGRADES,
   BASE_UPGRADES,
   PET_SLOT_UPGRADES,
+  EGG_SELL_PRICES,
 } from "../config";
 
 interface MoveInput {
@@ -24,6 +25,8 @@ export class GameRoom extends Room<GameState> {
   private countdownTickTimer: number = 0;
   private nextEggId: number = 1;
   private nextPetId: number = 1;
+  private nextTrapId: number = 1;
+  private nextChickenId: number = 1;
 
   onCreate(options: any) {
     this.setState(new GameState());
@@ -35,6 +38,148 @@ export class GameRoom extends Room<GameState> {
           moveZ: Math.max(-1, Math.min(1, data.moveZ)),
           rotationY: typeof data.rotationY === "number" ? data.rotationY : 0,
         });
+      }
+    });
+
+    // --- Phase 4B Mechanics Listeners ---
+    this.onMessage("dropEgg", (client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (player && player.carriedEggTier) {
+        this.dropEggOnGround(player.x, player.z, player.carriedEggTier, client.sessionId);
+        player.carriedEggTier = "";
+        player.carriedEgg = null;
+      }
+    });
+
+    this.onMessage("sellEgg", (client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || !player.carriedEggTier) return;
+
+      const stallPos = GAME_CONFIG.MARKET_STALL_POS;
+      const dist = Math.hypot(player.x - stallPos.x, player.z - stallPos.z);
+      if (dist <= GAME_CONFIG.MARKET_STALL_RADIUS) {
+        const tier = player.carriedEggTier;
+        const price = EGG_SELL_PRICES[tier] || 50;
+        player.money += price;
+        player.carriedEggTier = "";
+        player.carriedEgg = null;
+
+        this.broadcast("serverAnnouncement", {
+          text: `🏷️ ${player.name} sold a ${tier.toUpperCase()} egg for $${price.toLocaleString()}!`,
+          rarity: tier,
+        });
+      }
+    });
+
+    this.onMessage("sellPet", (client, petId: string) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+
+      const stallPos = GAME_CONFIG.MARKET_STALL_POS;
+      const dist = Math.hypot(player.x - stallPos.x, player.z - stallPos.z);
+      if (dist <= GAME_CONFIG.MARKET_STALL_RADIUS) {
+        const petIdx = player.pets.findIndex((p) => p && p.id === petId);
+        if (petIdx !== -1) {
+          const pet = player.pets[petIdx];
+          if (!pet) return;
+          const price = (EGG_SELL_PRICES[pet.rarity] || 50) * 1.5;
+          player.money += price;
+          player.pets.splice(petIdx, 1);
+
+          this.broadcast("serverAnnouncement", {
+            text: `🐾 ${player.name} sold pet ${pet.name} for $${price.toLocaleString()}!`,
+            rarity: pet.rarity,
+          });
+        }
+      }
+    });
+
+    this.onMessage("fusePets", (client, targetRarity: string) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || player.baseIndex < 0) return;
+
+      // Check distance to base Fuse Machine
+      const basePos = GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
+      const fuseX = basePos.x + GAME_CONFIG.FUSE_MACHINE_OFFSET.x;
+      const fuseZ = basePos.z + GAME_CONFIG.FUSE_MACHINE_OFFSET.z;
+      const dist = Math.hypot(player.x - fuseX, player.z - fuseZ);
+
+      if (dist <= GAME_CONFIG.FUSE_MACHINE_RADIUS) {
+        const matchingPets = player.pets.filter((p) => p && p.rarity === targetRarity);
+        if (matchingPets.length >= 3) {
+          // Remove 3 matching pets
+          let removedCount = 0;
+          for (let i = player.pets.length - 1; i >= 0; i--) {
+            const p = player.pets[i];
+            if (p && p.rarity === targetRarity) {
+              player.pets.splice(i, 1);
+              removedCount++;
+              if (removedCount >= 3) break;
+            }
+          }
+
+          // Generate 1 higher rarity pet
+          const rarityTiers = ["common", "rare", "epic", "secret", "eternal", "divine"];
+          const nextRarityIdx = Math.min(rarityTiers.length - 1, rarityTiers.indexOf(targetRarity) + 1);
+          const nextRarity = rarityTiers[nextRarityIdx];
+          const fusedPet = this.generatePetForTier(nextRarity);
+
+          player.pets.push(fusedPet);
+
+          this.broadcast("serverAnnouncement", {
+            text: `✨ ${player.name} fused 3 ${targetRarity.toUpperCase()} pets into a ${fusedPet.name} (${nextRarity.toUpperCase()})!`,
+            rarity: nextRarity,
+          });
+        }
+      }
+    });
+
+    this.onMessage("useBat", (client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || player.batCooldown > 0 || player.trappedTimer > 0) return;
+
+      player.batCooldown = GAME_CONFIG.BAT_COOLDOWN_SEC;
+      let hitTarget = false;
+
+      this.state.players.forEach((target, targetId) => {
+        if (targetId === client.sessionId) return;
+        const dist = Math.hypot(player.x - target.x, player.z - target.z);
+        if (dist <= GAME_CONFIG.BAT_RANGE && target.carriedEggTier) {
+          hitTarget = true;
+          this.dropEggOnGround(target.x, target.z, target.carriedEggTier, targetId);
+          target.carriedEggTier = "";
+          target.carriedEgg = null;
+
+          this.broadcast("serverAnnouncement", {
+            text: `💥 ${player.name} hit ${target.name} with a bat! Egg dropped!`,
+            rarity: "epic",
+          });
+        }
+      });
+    });
+
+    this.onMessage("placeTrap", (client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || player.trapCount <= 0 || player.trappedTimer > 0) return;
+
+      player.trapCount--;
+      const trap = new Trap();
+      trap.id = `trap_${this.nextTrapId++}`;
+      trap.ownerId = client.sessionId;
+      trap.x = player.x;
+      trap.y = 0;
+      trap.z = player.z;
+
+      this.state.placedTraps.set(trap.id, trap);
+    });
+
+    this.onMessage("buyTraps", (client) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || player.trapCount >= GAME_CONFIG.MAX_TRAPS_PER_PLAYER) return;
+
+      if (player.money >= GAME_CONFIG.TRAP_REFILL_COST) {
+        player.money -= GAME_CONFIG.TRAP_REFILL_COST;
+        player.trapCount = GAME_CONFIG.MAX_TRAPS_PER_PLAYER;
       }
     });
 
@@ -179,6 +324,9 @@ export class GameRoom extends Room<GameState> {
   private update(deltaTimeMs: number) {
     const dt = deltaTimeMs / 1000;
 
+    // Day/Night Cycle (120 seconds full day/night loop)
+    this.state.dayNightProgress = (this.state.dayNightProgress + dt / 120) % 1;
+
     // Special Egg Countdown Timer
     this.specialEggTimer -= dt;
     this.countdownTickTimer += dt;
@@ -213,8 +361,22 @@ export class GameRoom extends Room<GameState> {
 
     // 3. Players update
     this.state.players.forEach((player, sessionId) => {
+      // Cooldowns and Timers
+      if (player.batCooldown > 0) {
+        player.batCooldown = Math.max(0, player.batCooldown - dt);
+      }
+      if (player.trappedTimer > 0) {
+        player.trappedTimer = Math.max(0, player.trappedTimer - dt);
+      }
+
       const input = this.playerInputs.get(sessionId);
       if (!input) return;
+
+      // Disable movement if player is trapped
+      if (player.trappedTimer > 0) {
+        input.moveX = 0;
+        input.moveZ = 0;
+      }
 
       let effectiveSpeed = Math.min(
         GAME_CONFIG.MAX_SPEED_CAP,
@@ -262,7 +424,7 @@ export class GameRoom extends Room<GameState> {
       }
 
       // 4. Pickup
-      if (!player.carriedEggTier) {
+      if (!player.carriedEggTier && player.trappedTimer <= 0) {
         this.state.mapEggs.forEach((egg, eggId) => {
           if (egg.dropCooldown > 0 && egg.lastDroppedBy === sessionId) return;
 
@@ -274,6 +436,23 @@ export class GameRoom extends Room<GameState> {
             newEgg.tier = egg.tier;
             newEgg.carriedBy = sessionId;
             player.carriedEgg = newEgg;
+
+            // Wake chicken if egg has chicken!
+            if (egg.hasChicken) {
+              const chicken = new ChasingChicken();
+              chicken.id = `chicken_${this.nextChickenId++}`;
+              chicken.targetPlayerId = sessionId;
+              chicken.x = egg.x;
+              chicken.y = 0;
+              chicken.z = egg.z;
+              chicken.lifetime = GAME_CONFIG.CHICKEN_CHASE_DURATION;
+              this.state.chasingChickens.set(chicken.id, chicken);
+
+              this.broadcast("serverAnnouncement", {
+                text: `🐓 ${player.name} woke up a sleeping chicken! It's chasing them!`,
+                rarity: "rare",
+              });
+            }
 
             this.state.mapEggs.delete(eggId);
           }
@@ -415,6 +594,50 @@ export class GameRoom extends Room<GameState> {
         }
       }
     }
+
+    // 10. Chasing Chickens Pursuit & Pecking
+    this.state.chasingChickens.forEach((chicken, chickenId) => {
+      chicken.lifetime -= dt;
+      const target = this.state.players.get(chicken.targetPlayerId);
+      if (target && chicken.lifetime > 0) {
+        const dx = target.x - chicken.x;
+        const dz = target.z - chicken.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 0.1) {
+          chicken.x += (dx / dist) * GAME_CONFIG.CHICKEN_CHASE_SPEED * dt;
+          chicken.z += (dz / dist) * GAME_CONFIG.CHICKEN_CHASE_SPEED * dt;
+        }
+
+        if (dist <= 1.2 && target.carriedEggTier) {
+          this.dropEggOnGround(target.x, target.z, target.carriedEggTier, target.id);
+          target.carriedEggTier = "";
+          target.carriedEgg = null;
+          this.broadcast("serverAnnouncement", {
+            text: `🐓 Angry chicken pecked ${target.name}! Egg dropped!`,
+            rarity: "rare",
+          });
+          this.state.chasingChickens.delete(chickenId);
+        }
+      } else {
+        this.state.chasingChickens.delete(chickenId);
+      }
+    });
+
+    // 11. Trap Triggering (7s Stun)
+    this.state.placedTraps.forEach((trap, trapId) => {
+      this.state.players.forEach((player, sessionId) => {
+        if (sessionId === trap.ownerId) return;
+        const dist = Math.hypot(player.x - trap.x, player.z - trap.z);
+        if (dist <= GAME_CONFIG.TRAP_TRIGGER_RADIUS && player.trappedTimer <= 0) {
+          player.trappedTimer = GAME_CONFIG.TRAP_STUN_DURATION_SEC;
+          this.state.placedTraps.delete(trapId);
+          this.broadcast("serverAnnouncement", {
+            text: `🚨 ${player.name} stepped on a trap! TRAPPED for 7s!`,
+            rarity: "epic",
+          });
+        }
+      });
+    });
   }
 
   private generatePetForTier(tier: string): Pet {
@@ -471,6 +694,7 @@ export class GameRoom extends Room<GameState> {
     egg.x = Math.cos(angle) * r;
     egg.y = 0;
     egg.z = Math.sin(angle) * r;
+    egg.hasChicken = Math.random() < 0.35;
 
     this.state.mapEggs.set(egg.id, egg);
 

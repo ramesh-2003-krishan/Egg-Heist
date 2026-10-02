@@ -96,6 +96,70 @@ export class EggManager {
     return group;
   }
 
+  public createSleepingChickenMesh(): THREE.Group {
+    const chickenGroup = new THREE.Group();
+
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+    const beakMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3 });
+    const combMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3 });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x334155 });
+
+    // Body
+    const bodyGeo = new THREE.BoxGeometry(0.55, 0.45, 0.65);
+    const body = new THREE.Mesh(bodyGeo, whiteMat);
+    body.position.y = 0.225;
+    body.castShadow = true;
+    chickenGroup.add(body);
+
+    // Head
+    const headGeo = new THREE.BoxGeometry(0.35, 0.35, 0.35);
+    const head = new THREE.Mesh(headGeo, whiteMat);
+    head.position.set(0, 0.4, 0.2);
+    head.castShadow = true;
+    chickenGroup.add(head);
+
+    // Beak
+    const beakGeo = new THREE.BoxGeometry(0.12, 0.1, 0.18);
+    const beak = new THREE.Mesh(beakGeo, beakMat);
+    beak.position.set(0, 0.35, 0.42);
+    chickenGroup.add(beak);
+
+    // Comb
+    const combGeo = new THREE.BoxGeometry(0.08, 0.16, 0.22);
+    const comb = new THREE.Mesh(combGeo, combMat);
+    comb.position.set(0, 0.62, 0.2);
+    chickenGroup.add(comb);
+
+    // Sleeping Eye Slits (Horizontal lines)
+    const eyeGeo = new THREE.BoxGeometry(0.1, 0.03, 0.02);
+    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+    leftEye.position.set(-0.1, 0.42, 0.38);
+    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+    rightEye.position.set(0.1, 0.42, 0.38);
+    chickenGroup.add(leftEye, rightEye);
+
+    // Floating zZ Sprite
+    const zCanvas = document.createElement("canvas");
+    zCanvas.width = 128;
+    zCanvas.height = 128;
+    const zCtx = zCanvas.getContext("2d")!;
+    zCtx.font = "Bold 52px 'Segoe UI', sans-serif";
+    zCtx.fillStyle = "#38bdf8";
+    zCtx.shadowColor = "#0284c7";
+    zCtx.shadowBlur = 6;
+    zCtx.fillText("zZ", 32, 80);
+
+    const zTex = new THREE.CanvasTexture(zCanvas);
+    const zMat = new THREE.SpriteMaterial({ map: zTex, transparent: true });
+    const zSprite = new THREE.Sprite(zMat);
+    zSprite.scale.set(1.0, 1.0, 1.0);
+    zSprite.position.set(0.3, 0.95, 0);
+    zSprite.name = "zZSprite";
+    chickenGroup.add(zSprite);
+
+    return chickenGroup;
+  }
+
   public syncMapEggs(mapEggsMap: Map<string, any>) {
     // 1. Remove egg meshes no longer present on map
     this.mapEggMeshes.forEach((meshGroup, eggId) => {
@@ -114,6 +178,17 @@ export class EggManager {
         this.mapEggMeshes.set(eggId, group);
       }
       group.position.set(eggData.x, 0, eggData.z);
+
+      // Handle Sleeping Chicken
+      let chickenMesh = group.getObjectByName("sleepingChicken");
+      if (eggData.hasChicken && !chickenMesh) {
+        chickenMesh = this.createSleepingChickenMesh();
+        chickenMesh.name = "sleepingChicken";
+        chickenMesh.position.set(0.7, 0, 0);
+        group.add(chickenMesh);
+      } else if (!eggData.hasChicken && chickenMesh) {
+        group.remove(chickenMesh);
+      }
     });
   }
 

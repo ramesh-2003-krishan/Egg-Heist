@@ -1,54 +1,50 @@
-# 🥚 Egg Heist - 3D Multiplayer Browser Game
+# 🥚 Egg Heist - Bright Cartoony Roblox 3D Multiplayer Game
 
-A Roblox-inspired 3D real-time multiplayer browser game built with **Three.js** and **Colyseus** (server-authoritative physics & game loop).
+A bright, cartoony Roblox-style 3D real-time multiplayer browser game built with **Three.js** and **Colyseus** (server-authoritative physics & game loop).
 
 ---
 
-## 🎮 Core Game Features
+## 🎮 Core Game Features & Mechanics
 
-1. **Player Base Platforms & Treadmills**:
+1. **Procedural 3D Lego World & Day/Night Cycle**:
+   - Bright green Lego studded floor texture with dark drop shadows and brown checkered cliff walls.
+   - Server-authoritative Day/Night cycle (120s loop) dynamically shifting sky colors (sky blue -> sunset orange -> deep night navy), fog density, and sun lighting with drifting clouds.
+
+2. **Player Base Platforms, Treadmills & Incubators**:
    - Each player automatically gets assigned an authoritative base platform (up to 4–6 slots per room).
-   - Stepping onto your personal base treadmill raises your **Speed Stat** over time.
-   - Upgrading treadmills multiplies speed growth rate up to **8x**.
+   - Stepping onto your personal base treadmill raises your **Speed Stat** over time. Upgrading treadmills multiplies speed growth rate up to **8x**.
 
-2. **Procedural 3D World Eggs & Carrying/Stealing Physics**:
-   - 6 Egg Tiers: `Common`, `Rare`, `Epic`, `Secret` (Zebra canvas texture), `Eternal` (Rainbow gradient), and `Divine` (Shining gold).
-   - Carrying eggs reduces movement speed based on tier weight multipliers.
-   - Steal eggs directly out of opponent base incubators!
-   - Player-to-player physical collisions cause carried eggs to drop onto the ground.
+3. **Eggs, Sleeping Chickens & Stealing Physics**:
+   - 6 Egg Tiers: `Common`, `Rare`, `Epic`, `Secret`, `Eternal`, and `Divine`.
+   - Eggs with sleeping chickens wake up an angry white 3D chicken (`CHICKEN_CHASE_SPEED = 7.5`) when picked up, chasing and pecking players until they drop the egg!
+   - Steal eggs directly out of opponent base incubators! Player-to-player physical collisions cause carried eggs to drop.
 
-3. **Egg Hatching, Procedural 3D Pets & Continuous Income**:
-   - Deposited eggs tick down their hatch timer inside wooden incubator nests.
-   - Hatched eggs generate 3D blocky pets floating around the owner's platform.
-   - Pets feature procedural names, 3 sizes (`small`, `normal`, `giant`), and 4 mutations (`none`, `golden` 2x, `rainbow` 4x, `shiny` 8x).
-   - Pets generate continuous passive income (`$`/sec) into your player balance.
+4. **Egg Hatching, 3D Pets & Base Pet Fuser**:
+   - Deposited eggs tick down hatch timers inside incubator nests, spawning 3D blocky pets that generate continuous passive income (`$`/sec).
+   - **Pet Fuser Machine**: Stand near your base's 3D Pet Fuser (glowing purple core) and press **F** to combine 3 matching pets into 1 higher-tier pet!
 
-4. **Rare Hatch Rewards (~1.2% Divine Trail & ~0.9% Angelic Treadmill)**:
-   - **Divine Rainbow Particle Trail**: Avatar emits dynamic 3D rainbow particles while sprinting.
-   - **Angelic Treadmill**: Upgrades base treadmill visual to 3D white marble pillars, golden halos, and white feathery wings (**3x speed growth multiplier**).
-   - Animated **"YOU GOT..."** celebration banner popup for rare drops.
+5. **Central 3D Market Stall**:
+   - Walk to the central red/white striped awning Market Stall and press **V** or click Sell to exchange carried eggs and pets directly for cash balance.
 
-5. **Shop System & Upgrades**:
-   - **Hotkeys**: Press **B** or **E** anytime to toggle the Shop Modal UI.
-   - **⚡ Treadmill Upgrades**: Unlock Neon Runner, Hyper Turbo, and Cosmic Overdrive with custom 3D glowing treadmill belt animations.
-   - **🏠 Base Upgrades**: Expand incubator capacity from 3 up to 6 eggs and enlarge base platform size.
-   - **🐾 Pet Slots**: Unlock active pet slots from 6 up to 12.
+6. **Combat & Traps (Hotbar Controls)**:
+   - **Wooden Bat (Key 1)**: Swing wooden bat (`useBat`) to strike nearby opponents, forcing them to drop their carried egg and knocking them backward.
+   - **Bear Traps (Key 2)**: Place invisible traps (`placeTrap`). Opponents stepping on them are stunned for 7 seconds with a prominent overhead `🚨 TRAPPED (7.0s)` status banner.
+
+7. **Bouncing Red Arrow Guide Trail**:
+   - Dynamic 3D bouncing red arrows path on the ground pointing to your base incubator (when carrying an egg), base treadmill (when new), or nearest map egg.
 
 ---
 
 ## 🎨 Cartoony Roblox-Style HUD & UI
 
-The user interface has been restyled to match a bright, cartoony Roblox aesthetic:
-- **Typography**: Google Fonts ("Lilita One" & "Fredoka") with thick text stroke (`-webkit-text-stroke`).
-- **Top-Left Bar**: Quick action icons (⚙️ Settings, 🎒 Backpack, 💬 Chat) + Fading **Event Feed** for server announcements and rare egg spawn alerts.
-- **Top-Center Header**: Big outlined 3D text `EGG HEIST!`.
-- **Top-Right Leaderboard**: Live room leaderboard with columns (`People`, `Money/s`, `Speed`), sorted by `Money/s`, with local player highlight & toggle close `(X)`.
-- **Left-Middle Buttons**: Green **Shop** button (🛒 with red `!` badge when upgrades are affordable) and Cyan **Index** button (📖 for Egg Tiers & Pet Rarities lookup).
-- **Right-Middle Buttons**: Red **Egg** status button (🥚) and Orange **Paw** active pets drawer button (🐾).
-- **Bottom-Left Stats**: Large **Speed** (👟) and **Money** (💵) with dynamic green `+$X/s` passive income rate indicator.
-- **Bottom-Center Hotbar**: 3-slot hotbar (1, 2, 3) displaying carried egg and tools with active slot highlight.
-- **Bottom-Right Special Egg Chip**: Countdown chip (🌙) displaying `next special egg in MMm SSs`, driven by server timer.
-- **Tutorial Guidance Arrows**: Red bouncing CSS arrows pointing to the treadmill (until first used) and incubator (until first egg deposited).
+- **Typography**: Google Fonts ("Lilita One" & "Fredoka") with thick text stroke (`-webkit-text-stroke`) and glossy drop shadows.
+- **Top-Center Banner**: Outlined 3D title `EGG HEIST 🥚` + Live `☀️ DAYTIME` / `🌙 NIGHTTIME` status chip.
+- **Top-Left Bar**: Quick action icons (⚙️ Settings, 🎒 Backpack, 💬 Chat) + Fading cartoon **Event Feed** for server announcements and rare egg alerts.
+- **Top-Right Leaderboard**: Live room leaderboard displaying player ranks, money, and speed.
+- **Hotbar Controls**: 3-slot Roblox hotbar:
+  - **Slot 1**: 🪵 Wooden Bat (`Key 1`)
+  - **Slot 2**: 🪤 Bear Traps (`Key 2` x3)
+  - **Slot 3**: 🥚 Drop Egg (`Key G`) / Sell at Stall (`Key V`)
 
 ---
 

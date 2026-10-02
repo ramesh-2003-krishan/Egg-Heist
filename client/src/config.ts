@@ -131,4 +131,26 @@ export const GAME_CONFIG = {
 
   DIVINE_TRAIL_CHANCE: 0.012,
   ANGELIC_TREADMILL_CHANCE: 0.009,
+
+  BAT_COOLDOWN_SEC: 3.0,
+  BAT_RANGE: 2.2,
+  TRAP_STUN_DURATION_SEC: 7.0,
+  TRAP_TRIGGER_RADIUS: 1.5,
+  MAX_TRAPS_PER_PLAYER: 3,
+  TRAP_REFILL_COST: 100,
+  MARKET_STALL_POS: { x: 0, z: 0 },
+  MARKET_STALL_RADIUS: 3.0,
+  FUSE_MACHINE_OFFSET: { x: -3.5, z: 2 },
+  FUSE_MACHINE_RADIUS: 2.5,
+  CHICKEN_CHASE_SPEED: 7.5,
+  CHICKEN_CHASE_DURATION: 4.0,
+};
+
+export const EGG_SELL_PRICES: Record<string, number> = {
+  common: 50,
+  rare: 150,
+  epic: 500,
+  secret: 1800,
+  eternal: 5000,
+  divine: 15000,
 };

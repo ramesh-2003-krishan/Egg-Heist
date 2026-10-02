@@ -13,8 +13,8 @@
     />
     <!-- Bloxity SDK -->
     <script src="https://sdk.bloxity.io/legion-sdk.min.js"></script>
-    <script type="module" crossorigin src="/assets/index-BePgYrHV.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Bw92C-e_.css">
+    <script type="module" crossorigin src="/assets/index-DQKhg1-z.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Dx18ywMh.css">
   </head>
   <body>
     <div id="app"></div>
@@ -32,9 +32,13 @@
         <div id="event-feed-container" class="event-feed"></div>
       </div>
 
-      <!-- 2. TOP-CENTER GAME TITLE -->
+      <!-- 2. TOP-CENTER GAME TITLE & DAY/NIGHT BANNER -->
       <div id="top-center-header">
-        <h1 class="cartoony-game-title">EGG HEIST!</h1>
+        <h1 class="cartoony-game-title">EGG HEIST 🥚</h1>
+        <div id="day-night-chip" class="day-night-banner">
+          <span id="day-night-icon" class="banner-icon">☀️</span>
+          <span id="day-night-text" class="banner-text">DAYTIME</span>
+        </div>
       </div>
 
       <!-- 3. TOP-RIGHT LEADERBOARD -->
@@ -93,32 +97,32 @@
 
       <!-- 7. BOTTOM-CENTER HOTBAR -->
       <div id="bottom-center-hotbar" class="cartoony-hotbar">
-        <div class="hotbar-slot active" data-slot="1">
+        <div id="hotbar-slot-1" class="hotbar-slot active" data-slot="1" title="Wooden Bat (Key 1)">
           <span class="slot-num">1</span>
-          <div id="hotbar-egg-slot" class="slot-content">
-            <span class="hotbar-icon">🥚</span>
-            <span class="hotbar-empty">Empty</span>
+          <div class="slot-content">
+            <span class="hotbar-icon">🪵</span>
+            <span class="hotbar-name">Bat</span>
           </div>
         </div>
-        <div class="hotbar-slot" data-slot="2">
+        <div id="hotbar-slot-2" class="hotbar-slot" data-slot="2" title="Bear Trap (Key 2)">
           <span class="slot-num">2</span>
           <div class="slot-content">
-            <span class="hotbar-icon">👟</span>
-            <span>Speed Boots</span>
+            <span class="hotbar-icon">🪤</span>
+            <span class="hotbar-name">Trap <strong id="hotbar-trap-count">(x3)</strong></span>
           </div>
         </div>
-        <div class="hotbar-slot" data-slot="3">
-          <span class="slot-num">3</span>
-          <div class="slot-content">
-            <span class="hotbar-icon">🐣</span>
-            <span>Incubator</span>
+        <div id="hotbar-slot-3" class="hotbar-slot" data-slot="3" title="Drop Egg (Key G) / Sell (Key V)">
+          <span class="slot-num">G / V</span>
+          <div id="hotbar-egg-slot" class="slot-content">
+            <span class="hotbar-icon">🥚</span>
+            <span class="hotbar-name">Empty</span>
           </div>
         </div>
       </div>
 
       <!-- 8. BOTTOM-RIGHT SPECIAL EGG COUNTDOWN CHIP -->
       <div id="bottom-right-countdown" class="cartoony-chip">
-        <span class="chip-icon">🌙</span>
+        <span class="chip-icon">✨</span>
         <span id="countdown-timer-text" class="chip-text">next special egg in 2m 4s</span>
       </div>
 
