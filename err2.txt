@@ -1,0 +1,80 @@
+﻿≡ƒÜÇ Starting Pet Selling Mechanics Automated Test...
+≡ƒôí Test Server listening on ws://localhost:25671
+Egg Heist GameRoom running with robust interaction handler & Red Alert / Freeze rules
+≡ƒÄ« [Server] Client joining room: nEtW9f63t
+Γ£à Joined test room with sessionId nEtW9f63t
+
+Γ₧í∩╕Å [Test Case 1] Spawning ground pet, picking up, moving to stall zone, and calling sellCarriedPet...
+≡ƒº¬ [TEST DEBUG] Forced ground pet pet_test_1791013796168_872 for SellTester at (-25.0, -21.0)
+≡ƒÉ╢ Spawned ground pet pet_test_1791013796168_872 (Test Dog, rare)
+≡ƒöì [Server Interact] Processing E-key interact for SellTester at pos (-25.0, -21.0)
+≡ƒÉ╛ [Server Interact SUCCESS] SellTester picked up ground pet Test Dog!
+≡ƒÄÆ Player is carrying pet pet_test_1791013796168_872
+≡ƒº¬ [TEST DEBUG] Teleported SellTester to (0, 0)
+≡ƒÆ░ [Server Sell Carried Pet SUCCESS] SellTester sold carried Test Dog (rare) for $350!
+≡ƒô⌐ [Client Received] petSoldSuccess: Test Dog (rare) for +$350
+node : colyseus.js: 
+onMessage() not 
+registered for type 
+'serverAnnouncement'.
+At line:1 char:1
++ node server/node_modu
+les/ts-node/dist/bin.js
+ --transpile-only 
+server/ ...
++ ~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
+~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: (colyseus.js:    
+ on...rAnnouncement    
+'.:String) [], Rem    
+oteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+colyseus.js: 
+onMessage() not 
+registered for type 
+'specialEggCountdown'.
+colyseus.js: 
+onMessage() not 
+registered for type 'gu
+ardRotationCountdown'.
+Γ£à [Pass 1/3] Case 1 SUCCESS: Carried pet sold directly for +$350! Money is now $350
+
+Γ₧í∩╕Å [Test Case 2] Spawning ground pet, carrying, storing in shop, then calling sellShopPet...
+≡ƒº¬ [TEST DEBUG] Forced ground pet pet_test_1791013797541_262 for SellTester at (0.0, 0.0)
+≡ƒöì [Server Interact] Processing E-key interact for SellTester at pos (0.0, 0.0)
+≡ƒ¢ì∩╕Å [Server Interact] SellTester is at Sell Stall but carrying nothing to sell.
+Γ¥î PET SELL TEST 
+EXCEPTION DETAILED:
+Error: Expected player 
+to be carrying pet for 
+Case 2!
+    at runSellTest 
+(C:\Projects\project 21
+\Egg-Heist\server\test\
+sell.test.ts:104:35)
+    at runNextTicks (no
+de:internal/process/tas
+k_queues:60:5)
+    at processTimers (n
+ode:internal/timers:516
+:9)
+Error: Expected player 
+to be carrying pet for 
+Case 2!
+    at runSellTest 
+(C:\Projects\project 21
+\Egg-Heist\server\test\
+sell.test.ts:104:35)
+    at runNextTicks (no
+de:internal/process/tas
+k_queues:60:5)
+    at processTimers (n
+ode:internal/timers:516
+:9)

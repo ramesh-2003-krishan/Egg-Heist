@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node-dev --respawn src/index.ts",
     "build": "tsc",
-    "test:freeze": "ts-node test/freeze.test.ts"
+    "test:freeze": "ts-node --transpile-only test/freeze.test.ts",
+    "test:sell": "ts-node --transpile-only test/sell.test.ts"
   },
   "dependencies": {
     "@colyseus/schema": "^2.0.35",

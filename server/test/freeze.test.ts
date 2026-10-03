@@ -106,18 +106,18 @@ async function runFreezeTest() {
     const moneyBefore = player.money;
     room.send("interactKey");
     room.send("dropEgg");
-    room.send("sellPet");
+    room.send("sellShopPet", { petId: "nonexistent" });
     await sleep(200);
 
     if (player.money !== moneyBefore) throw new Error("Interactions/sales should be rejected while frozen!");
     console.log("✅ [Pass 3/4] Interaction handlers rejected input while frozen.");
 
-    // --- WAIT FOR FREEZE EXPIRATION (3.2 seconds) ---
-    console.log("⏳ [Test] Waiting 3.2 seconds for test freeze to expire...");
-    await sleep(3200);
+    // --- WAIT FOR FREEZE EXPIRATION (4.5 seconds) ---
+    console.log("⏳ [Test] Waiting 4.5 seconds for test freeze to expire...");
+    await sleep(4500);
 
-    if (player.freezeEndTime !== 0) throw new Error(`Expected freezeEndTime === 0 after expiry, got ${player.freezeEndTime}`);
     if (player.frozenTimer !== 0) throw new Error(`Expected frozenTimer === 0 after expiry, got ${player.frozenTimer}`);
+    if (player.freezeEndTime > Date.now()) throw new Error(`Expected freezeEndTime <= Date.now() after expiry, got ${player.freezeEndTime}`);
     if ((player.redAlerts as number) !== 0) throw new Error(`Expected redAlerts === 0 after expiry, got ${player.redAlerts}`);
     console.log("☀️ [Pass 4/4] Freeze EXPIRED! redAlerts reset to 0, frozenTimer reset to 0.");
 

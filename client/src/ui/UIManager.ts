@@ -4,7 +4,7 @@ import { IndexModal } from "./IndexModal";
 import { SettingsModal } from "./SettingsModal";
 import { TutorialArrows } from "./TutorialArrows";
 import { Player, Pet } from "../network/schema/GameState";
-import { EGG_TIERS, TREADMILL_UPGRADES, BASE_UPGRADES, PET_SLOT_UPGRADES, GAME_CONFIG } from "../config";
+import { EGG_TIERS, TREADMILL_UPGRADES, BASE_UPGRADES, PET_SLOT_UPGRADES, GAME_CONFIG, PET_SELL_BASE_PRICES, PET_SIZE_MULTIPLIERS, PET_MUTATION_MULTIPLIERS } from "../config";
 
 export class UIManager {
   public eventFeed: EventFeed;
@@ -364,9 +364,9 @@ export class UIManager {
       const itemCard = document.createElement("div");
       itemCard.className = "shop-storage-item";
 
-      const basePrice = (GAME_CONFIG as any).PET_SELL_BASE_PRICES?.[pet.rarity] || 100;
-      const sizeMult = (GAME_CONFIG as any).PET_SIZE_MULTIPLIERS?.[pet.size] || 1.0;
-      const mutMult = (GAME_CONFIG as any).PET_MUTATION_MULTIPLIERS?.[pet.mutation] || 1.0;
+      const basePrice = PET_SELL_BASE_PRICES[pet.rarity] || 100;
+      const sizeMult = PET_SIZE_MULTIPLIERS[pet.size] || 1.0;
+      const mutMult = PET_MUTATION_MULTIPLIERS[pet.mutation] || 1.0;
       const finalPrice = Math.floor(basePrice * sizeMult * mutMult);
 
       const rarityColors: Record<string, string> = {
@@ -402,9 +402,7 @@ export class UIManager {
           sellBtn.disabled = true;
           sellBtn.textContent = "SELLING...";
           sellBtn.style.opacity = "0.7";
-          setTimeout(() => {
-            sendCallback("sellShopPet", { petId: pet.id });
-          }, 1000); // 1-second sell animation
+          sendCallback("sellShopPet", { petId: pet.id });
         };
       }
 
@@ -439,7 +437,12 @@ export class UIManager {
     if (player.carriedPet) {
       promptContainer.classList.remove("hidden", "guarded");
       if (distToStall <= GAME_CONFIG.MARKET_STALL_RADIUS) {
-        promptText.textContent = "Press G to store pet in shop";
+        const pet = player.carriedPet;
+        const basePrice = PET_SELL_BASE_PRICES[pet.rarity] || 100;
+        const sizeMult = PET_SIZE_MULTIPLIERS[pet.size] || 1.0;
+        const mutMult = PET_MUTATION_MULTIPLIERS[pet.mutation] || 1.0;
+        const finalPrice = Math.floor(basePrice * sizeMult * mutMult);
+        promptText.textContent = `G: store pet in shop | V: sell pet now for $${finalPrice.toLocaleString()}`;
       } else {
         promptText.textContent = "Press G to drop pet";
       }

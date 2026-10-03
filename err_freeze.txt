@@ -1,0 +1,92 @@
+﻿≡ƒÜÇ Starting Red Alert Freeze System Automated Test...
+≡ƒôí Test Server listening on ws://localhost:25670
+Egg Heist GameRoom running with robust interaction handler & Red Alert / Freeze rules
+≡ƒÄ« [Server] Client joining room: DyTB6MHUT
+Γ£à Joined test room with sessionId DyTB6MHUT
+≡ƒæñ Initial player state: name='TestPlayer', redAlerts=0, frozenTimer=0
+Γ₧í∩╕Å [Test] Triggering 1st Red Alert...
+≡ƒÜ¿ [Server RedAlert Trace] TestPlayer received Red Alert (1/3). Reason: Debug Test Trigger
+node : colyseus.js: 
+onMessage() not registered 
+for type 'redAlert'.
+At line:1 char:1
++ node server/node_modules/
+ts-node/dist/bin.js 
+--transpile-only server/ 
+...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+    + CategoryInfo         
+     : NotSpecified: (col  
+  yseus.js: on...ype 're   
+ dAlert'.:String) [], R    
+emoteException
+    + FullyQualifiedErrorI 
+   d : NativeCommandError
+ 
+colyseus.js: onMessage() 
+not registered for type 
+'serverAnnouncement'.
+Γ£à [Pass 1/4] Attempt 1: redAlerts === 1, player can still move.
+Γ£à [Pass 1/4] Movement verified after Alert 1: x shifted from -25.00 to -23.20
+colyseus.js: onMessage() 
+not registered for type 
+'specialEggCountdown'.
+colyseus.js: onMessage() 
+not registered for type 
+'guardRotationCountdown'.
+Γ₧í∩╕Å [Test] Triggering 2nd Red Alert...
+≡ƒÜ¿ [Server RedAlert Trace] TestPlayer received Red Alert (2/3). Reason: Debug Test Trigger
+colyseus.js: onMessage() 
+not registered for type 
+'redAlert'.
+colyseus.js: onMessage() 
+not registered for type 
+'serverAnnouncement'.
+Γ£à [Pass 2/4] Attempt 2: redAlerts === 2, player can still move.
+Γ₧í∩╕Å [Test] Triggering 3rd Red Alert (Freeze Expected)...
+≡ƒÜ¿ [Server RedAlert Trace] TestPlayer received Red Alert (3/3). Reason: Debug Test Trigger
+Γ¥ä∩╕Å [Server] PLAYER FROZEN: TestPlayer frozen for 3s until 2026-10-03T08:02:26.376Z
+colyseus.js: onMessage() 
+not registered for type 
+'redAlert'.
+colyseus.js: onMessage() 
+not registered for type 
+'serverAnnouncement'.
+colyseus.js: onMessage() 
+not registered for type 
+'serverAnnouncement'.
+colyseus.js: onMessage() 
+not registered for type 
+'specialEggCountdown'.
+colyseus.js: onMessage() 
+not registered for type 
+'guardRotationCountdown'.
+Γ£à [Pass 3/4] Attempt 3: Player FROZEN! freezeEndTime=2026-10-03T08:02:26.376Z, frozenTimer=3.0s
+≡ƒöÆ [Test] Testing move command while frozen...
+Γ£à [Pass 3/4] Position stayed locked (movement rejected while frozen).
+≡ƒöÆ [Test] Testing interaction rejection while frozen...
+Γ¥ä∩╕Å [Server Interact] REJECTED: Player TestPlayer is FROZEN until 2026-10-03T08:02:26.376Z
+onMessage for "sellPet" 
+not registered.
+Client left: DyTB6MHUT
+GameRoom disposing
+Γ£à [Pass 3/4] Interaction handlers rejected input while frozen.
+ΓÅ│ [Test] Waiting 4.5 seconds for test freeze to expire...
+Γ¥î FREEZE TEST EXCEPTION 
+DETAILED:
+Error: Expected 
+frozenTimer === 0 after 
+expiry, got 3
+    at runFreezeTest 
+(C:\Projects\project 21\Egg
+-Heist\server\test\freeze.t
+est.ts:119:41)
+Error: Expected 
+frozenTimer === 0 after 
+expiry, got 3
+    at runFreezeTest 
+(C:\Projects\project 21\Egg
+-Heist\server\test\freeze.t
+est.ts:119:41)

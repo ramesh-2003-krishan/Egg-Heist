@@ -63,6 +63,7 @@ export class NetworkManager {
   public localSessionId: string | null = null;
   private lastHandledRewardTimestamp: number = 0;
   private currentShopTab: string = "treadmills";
+  private previousShopPetsCount: number = 0;
 
   constructor(sceneManager: SceneManager) {
     this.sceneManager = sceneManager;
@@ -119,6 +120,10 @@ export class NetworkManager {
     if (this.openShopBtn) {
       this.openShopBtn.addEventListener("click", () => this.toggleShopModal());
     }
+    const openStorageBtn = document.getElementById("open-shop-storage-btn");
+    if (openStorageBtn) {
+      openStorageBtn.addEventListener("click", () => this.toggleShopStorageModal());
+    }
     if (this.shopCloseBtn) {
       this.shopCloseBtn.addEventListener("click", () => this.shopModalElement?.classList.add("hidden"));
     }
@@ -135,7 +140,21 @@ export class NetworkManager {
     window.addEventListener("keydown", (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      if (e.key === "b" || e.key === "B") {
+      if (e.key === "Escape") {
+        document.getElementById("shop-storage-modal")?.classList.add("hidden");
+        this.shopModalElement?.classList.add("hidden");
+      } else if (e.key === "h" || e.key === "H") {
+        if (this.room && this.localSessionId) {
+          const localPlayer = this.room.state.players.get(this.localSessionId);
+          if (localPlayer) {
+            const stallPos = GAME_CONFIG.MARKET_STALL_POS;
+            const distToStall = Math.hypot(localPlayer.x - stallPos.x, localPlayer.z - stallPos.z);
+            if (distToStall <= GAME_CONFIG.MARKET_STALL_RADIUS) {
+              this.toggleShopStorageModal();
+            }
+          }
+        }
+      } else if (e.key === "b" || e.key === "B") {
         this.toggleShopModal();
       } else if (e.key === "e" || e.key === "E") {
         this.interactKey();
@@ -357,6 +376,12 @@ export class NetworkManager {
             });
           }
         }
+
+        const shopPetsArr = (player as any).shopPets ? Array.from((player as any).shopPets) : [];
+        if (shopPetsArr.length > this.previousShopPetsCount) {
+          document.getElementById("shop-storage-modal")?.classList.remove("hidden");
+        }
+        this.previousShopPetsCount = shopPetsArr.length;
 
         this.uiManager.updateShopStorageModal(player, (msg, data) => this.room?.send(msg, data));
 
@@ -598,6 +623,7 @@ export class NetworkManager {
       const distToStall = Math.hypot(localPlayer.x - stallPos.x, localPlayer.z - stallPos.z);
       if (distToStall <= GAME_CONFIG.MARKET_STALL_RADIUS) {
         this.room.send("storePetInShop");
+        document.getElementById("shop-storage-modal")?.classList.remove("hidden");
         return;
       }
     }
@@ -605,7 +631,17 @@ export class NetworkManager {
   }
 
   public sellEgg() {
-    if (this.room) this.room.send("sellEgg");
+    if (!this.room || !this.localSessionId) return;
+    const localPlayer = this.room.state.players.get(this.localSessionId);
+    if (localPlayer && (localPlayer as any).carriedPet) {
+      const stallPos = GAME_CONFIG.MARKET_STALL_POS;
+      const distToStall = Math.hypot(localPlayer.x - stallPos.x, localPlayer.z - stallPos.z);
+      if (distToStall <= GAME_CONFIG.MARKET_STALL_RADIUS) {
+        this.room.send("sellCarriedPet");
+        return;
+      }
+    }
+    this.room.send("sellEgg");
   }
 
   public interactKey() {
