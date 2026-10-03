@@ -345,7 +345,7 @@ export class SceneManager {
       avatar.setRotationY(rotationY);
       if (typeof speed === "number") avatar.speed = speed;
       if (typeof speedStat === "number") avatar.speedStat = speedStat;
-      avatar.setCarriedEgg(carriedEggTier || "");
+      avatar.setCarriedItem(carriedEggTier || "", avatar.carriedPetData);
       if (typeof equippedDivineTrail === "boolean") {
         avatar.setEquippedDivineTrail(equippedDivineTrail);
       }

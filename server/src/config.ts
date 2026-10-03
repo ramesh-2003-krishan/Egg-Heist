@@ -153,6 +153,37 @@ export const GAME_CONFIG = {
   FUSE_MACHINE_RADIUS: 2.5,
   CHICKEN_CHASE_SPEED: 7.5,
   CHICKEN_CHASE_DURATION: 4.0,
+
+  // Feature 1: Pet Selling & Carrying Config
+  PET_PICKUP_RADIUS: 1.8,
+  PET_SLOT_RADIUS: 2.5,
+  BIG_SALE_THRESHOLD: 1000,
+
+  // Feature 2: Guarded Eggs & Catching Animals Config
+  GUARD_CHASE_SPEED_RATIO: 0.85,
+  GUARD_CHASE_MAX_TIME: 8.0,
+  GUARD_CHASE_MAX_DIST: 28.0,
+  GUARD_CATCH_RADIUS: 1.3,
+  GUARD_PENALTY_PERCENT_MIN: 0.10,
+  GUARD_PENALTY_PERCENT_MAX: 0.25,
+  GUARD_PENALTY_MIN: 20,
+  GUARD_PENALTY_MAX: 5000,
+  NEW_PLAYER_MONEY_THRESHOLD: 100,
+  NEW_PLAYER_MAX_LOSS: 10,
+  CAUGHT_STUN_DURATION_SEC: 1.5,
+  CAUGHT_INVULNERABILITY_SEC: 3.0,
+  COIN_DESPAWN_SEC: 8.0,
+  COIN_PICKUP_RADIUS: 1.8,
+
+  // Competitive Extras Config
+  CARRIER_HIGHLIGHT_TIERS: ["rare", "epic", "secret", "eternal", "divine"],
+
+  // Red Alerts & Freeze Rules Config
+  RED_ALERT_MAX_COUNT: 3,
+  RED_ALERT_RESET_SECONDS: 120,
+  FREEZE_SECONDS: 180,
+  INTERACT_COOLDOWN_MS: 300,
+  GUARD_ROTATION_SECONDS: 120,
 };
 
 export const EGG_SELL_PRICES: Record<string, number> = {
@@ -163,3 +194,46 @@ export const EGG_SELL_PRICES: Record<string, number> = {
   eternal: 5000,
   divine: 15000,
 };
+
+export const PET_SELL_BASE_PRICES: Record<string, number> = {
+  common: 100,
+  rare: 350,
+  epic: 1200,
+  secret: 4000,
+  eternal: 12000,
+  divine: 35000,
+};
+
+export const PET_SIZE_MULTIPLIERS: Record<string, number> = {
+  small: 0.8,
+  normal: 1.0,
+  giant: 1.8,
+};
+
+export const PET_MUTATION_MULTIPLIERS: Record<string, number> = {
+  none: 1.0,
+  golden: 2.0,
+  rainbow: 4.0,
+  shiny: 8.0,
+};
+
+export const PET_WEIGHT_MULTIPLIERS: Record<string, number> = {
+  common: 0.90,
+  rare: 0.85,
+  epic: 0.80,
+  secret: 0.75,
+  eternal: 0.70,
+  divine: 0.65,
+};
+
+export const GUARDED_CHANCE_BY_TIER: Record<string, number> = {
+  common: 0.20,
+  rare: 0.35,
+  epic: 0.55,
+  secret: 0.75,
+  eternal: 0.90,
+  divine: 1.00,
+};
+
+export const GUARD_ANIMAL_TYPES = ["chicken", "dog", "fox"];
+

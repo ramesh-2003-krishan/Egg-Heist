@@ -10,41 +10,375 @@ class GameRoom extends colyseus_1.Room {
         this.maxClients = config_1.GAME_CONFIG.MAX_BASE_SLOTS;
         this.playerInputs = new Map();
         this.baseSlots = new Array(config_1.GAME_CONFIG.MAX_BASE_SLOTS).fill(null);
+        this.persistentFreezes = new Map();
         this.spawnTimer = 0;
-        this.specialEggTimer = 124; // 2m 4s initial
+        this.specialEggTimer = 124;
         this.countdownTickTimer = 0;
         this.nextEggId = 1;
         this.nextPetId = 1;
         this.nextTrapId = 1;
         this.nextChickenId = 1;
+        this.nextCoinId = 1;
     }
     onCreate(options) {
         this.setState(new GameState_1.GameState());
+        // 1. Movement Message Listener
         this.onMessage("move", (client, data) => {
-            if (typeof data.moveX === "number" && typeof data.moveZ === "number") {
-                this.playerInputs.set(client.sessionId, {
-                    moveX: Math.max(-1, Math.min(1, data.moveX)),
-                    moveZ: Math.max(-1, Math.min(1, data.moveZ)),
-                    rotationY: typeof data.rotationY === "number" ? data.rotationY : 0,
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0)
+                    return;
+                if (typeof data.moveX === "number" && typeof data.moveZ === "number") {
+                    this.playerInputs.set(client.sessionId, {
+                        moveX: Math.max(-1, Math.min(1, data.moveX)),
+                        moveZ: Math.max(-1, Math.min(1, data.moveZ)),
+                        rotationY: typeof data.rotationY === "number" ? data.rotationY : 0,
+                    });
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'move' handler for ${client.sessionId}:`, err);
+            }
+        });
+        // 2. Primary Unified Interaction Listener (E Key)
+        this.onMessage("interactKey", (client) => {
+            try {
+                this.handlePlayerInteraction(client);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'interactKey' handler for ${client.sessionId}:`, err);
+            }
+        });
+        // 3. Drop Egg / Pet Listener (G Key)
+        this.onMessage("dropEgg", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0)
+                    return;
+                if (player.carriedEggTier) {
+                    console.log(`🥚 [Server] ${player.name} dropped carried egg (${player.carriedEggTier})`);
+                    this.dropEggOnGround(player.x, player.z, player.carriedEggTier, client.sessionId);
+                    player.carriedEggTier = "";
+                    player.carriedEgg = null;
+                }
+                else if (player.carriedPet) {
+                    const pet = player.carriedPet;
+                    pet.x = player.x;
+                    pet.y = 0;
+                    pet.z = player.z;
+                    pet.carriedBy = "";
+                    pet.isGroundPet = true;
+                    pet.baseIndex = player.baseIndex;
+                    player.groundPets.push(pet);
+                    player.carriedPet = null;
+                    console.log(`🐾 [Server] ${player.name} dropped carried pet ${pet.name}`);
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'dropEgg' handler for ${client.sessionId}:`, err);
+            }
+        });
+        // 4. Pickup Pet Explicit Listener
+        this.onMessage("pickupPet", (client, petId) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0)
+                    return;
+                this.handlePlayerInteraction(client, petId);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'pickupPet' handler:`, err);
+            }
+        });
+        // 5. Place Pet At Base Listener (F Key)
+        this.onMessage("placePetAtBase", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || !player.carriedPet || player.baseIndex < 0)
+                    return;
+                const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
+                const distToBase = Math.hypot(player.x - basePos.x, player.z - basePos.z);
+                const maxSlots = player.maxPetSlots || config_1.GAME_CONFIG.MAX_PET_SLOTS;
+                if (distToBase <= 8.0 && player.pets.length < maxSlots) {
+                    const pet = player.carriedPet;
+                    pet.isGroundPet = false;
+                    pet.carriedBy = "";
+                    player.pets.push(pet);
+                    player.carriedPet = null;
+                    console.log(`🏠 [Server] ${player.name} placed pet ${pet.name} into base slot (income active)`);
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'placePetAtBase' handler:`, err);
+            }
+        });
+        // 6. Sell Egg Listener
+        this.onMessage("sellEgg", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || !player.carriedEggTier)
+                    return;
+                this.handlePlayerInteraction(client);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'sellEgg' handler:`, err);
+            }
+        });
+        // 7. Sell Pet Listener
+        this.onMessage("sellPet", (client, petId) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0)
+                    return;
+                this.handlePlayerInteraction(client, petId);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'sellPet' handler:`, err);
+            }
+        });
+        // 8. Fuse Pets Listener
+        this.onMessage("fusePets", (client, targetRarity) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || player.baseIndex < 0)
+                    return;
+                const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
+                const fuseX = basePos.x + config_1.GAME_CONFIG.FUSE_MACHINE_OFFSET.x;
+                const fuseZ = basePos.z + config_1.GAME_CONFIG.FUSE_MACHINE_OFFSET.z;
+                const dist = Math.hypot(player.x - fuseX, player.z - fuseZ);
+                if (dist <= config_1.GAME_CONFIG.FUSE_MACHINE_RADIUS) {
+                    const matchingPets = player.pets.filter((p) => p && p.rarity === targetRarity);
+                    if (matchingPets.length >= 3) {
+                        let removedCount = 0;
+                        for (let i = player.pets.length - 1; i >= 0; i--) {
+                            const p = player.pets[i];
+                            if (p && p.rarity === targetRarity) {
+                                player.pets.splice(i, 1);
+                                removedCount++;
+                                if (removedCount >= 3)
+                                    break;
+                            }
+                        }
+                        const rarityTiers = ["common", "rare", "epic", "secret", "eternal", "divine"];
+                        const nextRarityIdx = Math.min(rarityTiers.length - 1, rarityTiers.indexOf(targetRarity) + 1);
+                        const nextRarity = rarityTiers[nextRarityIdx];
+                        const fusedPet = this.generatePetForTier(nextRarity);
+                        player.pets.push(fusedPet);
+                        this.broadcast("serverAnnouncement", {
+                            text: `✨ ${player.name} fused 3 ${targetRarity.toUpperCase()} pets into a ${fusedPet.name} (${nextRarity.toUpperCase()})!`,
+                            rarity: nextRarity,
+                        });
+                    }
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'fusePets' handler:`, err);
+            }
+        });
+        // 9. Use Bat Listener
+        this.onMessage("useBat", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || player.batCooldown > 0 || player.trappedTimer > 0 || player.caughtStunTimer > 0)
+                    return;
+                player.batCooldown = config_1.GAME_CONFIG.BAT_COOLDOWN_SEC;
+                this.state.players.forEach((target, targetId) => {
+                    if (targetId === client.sessionId)
+                        return;
+                    const dist = Math.hypot(player.x - target.x, player.z - target.z);
+                    if (dist <= config_1.GAME_CONFIG.BAT_RANGE) {
+                        if (target.carriedEggTier) {
+                            this.dropEggOnGround(target.x, target.z, target.carriedEggTier, targetId);
+                            target.carriedEggTier = "";
+                            target.carriedEgg = null;
+                            this.broadcast("serverAnnouncement", {
+                                text: `💥 ${player.name} hit ${target.name} with a bat! Egg dropped!`,
+                                rarity: "epic",
+                            });
+                        }
+                        else if (target.carriedPet) {
+                            const pet = target.carriedPet;
+                            pet.x = target.x;
+                            pet.z = target.z;
+                            pet.isGroundPet = true;
+                            pet.carriedBy = "";
+                            target.groundPets.push(pet);
+                            target.carriedPet = null;
+                            this.broadcast("serverAnnouncement", {
+                                text: `💥 ${player.name} hit ${target.name} with a bat! Pet dropped!`,
+                                rarity: "epic",
+                            });
+                        }
+                    }
                 });
             }
-        });
-        // --- Phase 4B Mechanics Listeners ---
-        this.onMessage("dropEgg", (client) => {
-            const player = this.state.players.get(client.sessionId);
-            if (player && player.carriedEggTier) {
-                this.dropEggOnGround(player.x, player.z, player.carriedEggTier, client.sessionId);
-                player.carriedEggTier = "";
-                player.carriedEgg = null;
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'useBat' handler:`, err);
             }
         });
-        this.onMessage("sellEgg", (client) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player || !player.carriedEggTier)
+        // 10. Trap & Shop Upgrades Listeners
+        this.onMessage("placeTrap", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || player.trapCount <= 0 || player.trappedTimer > 0 || player.caughtStunTimer > 0)
+                    return;
+                player.trapCount--;
+                const trap = new GameState_1.Trap();
+                trap.id = `trap_${this.nextTrapId++}`;
+                trap.ownerId = client.sessionId;
+                trap.x = player.x;
+                trap.y = 0;
+                trap.z = player.z;
+                this.state.placedTraps.set(trap.id, trap);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'placeTrap' handler:`, err);
+            }
+        });
+        this.onMessage("buyTraps", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || player.trapCount >= config_1.GAME_CONFIG.MAX_TRAPS_PER_PLAYER)
+                    return;
+                if (player.money >= config_1.GAME_CONFIG.TRAP_REFILL_COST) {
+                    player.money -= config_1.GAME_CONFIG.TRAP_REFILL_COST;
+                    player.trapCount = config_1.GAME_CONFIG.MAX_TRAPS_PER_PLAYER;
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'buyTraps' handler:`, err);
+            }
+        });
+        this.onMessage("buyTreadmill", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0)
+                    return;
+                const currentTier = player.treadmillTier || 1;
+                const nextUpgrade = config_1.TREADMILL_UPGRADES.find((u) => u.tier === currentTier + 1);
+                if (nextUpgrade && player.money >= nextUpgrade.cost) {
+                    player.money -= nextUpgrade.cost;
+                    player.treadmillTier = nextUpgrade.tier;
+                    console.log(`🛍️ [Server] Player ${player.name} upgraded Treadmill to Tier ${nextUpgrade.tier} (${nextUpgrade.name})`);
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'buyTreadmill' handler:`, err);
+            }
+        });
+        this.onMessage("buyBaseUpgrade", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0)
+                    return;
+                const currentTier = player.baseTier || 1;
+                const nextUpgrade = config_1.BASE_UPGRADES.find((u) => u.tier === currentTier + 1);
+                if (nextUpgrade && player.money >= nextUpgrade.cost) {
+                    player.money -= nextUpgrade.cost;
+                    player.baseTier = nextUpgrade.tier;
+                    console.log(`🛍️ [Server] Player ${player.name} upgraded Base to Tier ${nextUpgrade.tier} (${nextUpgrade.name})`);
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'buyBaseUpgrade' handler:`, err);
+            }
+        });
+        this.onMessage("buyPetSlot", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0)
+                    return;
+                const currentSlots = player.maxPetSlots || 6;
+                const nextUpgrade = config_1.PET_SLOT_UPGRADES.find((u) => u.multiplier > currentSlots);
+                if (nextUpgrade && player.money >= nextUpgrade.cost) {
+                    player.money -= nextUpgrade.cost;
+                    player.maxPetSlots = nextUpgrade.multiplier;
+                    console.log(`🛍️ [Server] Player ${player.name} upgraded Pet Slots to ${nextUpgrade.multiplier}`);
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'buyPetSlot' handler:`, err);
+            }
+        });
+        // Bloxity SDK Avatar Sync Listener
+        this.onMessage("updateBloxityAvatar", (client, cosmetics) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || typeof cosmetics !== "object" || cosmetics === null)
+                    return;
+                const sanitizeId = (id) => {
+                    if (typeof id !== "string")
+                        return "";
+                    const trimmed = id.trim();
+                    if (trimmed.length > 40)
+                        return "";
+                    if (!/^[A-Za-z0-9_-]*$/.test(trimmed))
+                        return "";
+                    return trimmed;
+                };
+                player.skinId = sanitizeId(cosmetics.skinId);
+                player.hatId = sanitizeId(cosmetics.hatId);
+                player.hairId = sanitizeId(cosmetics.hairId);
+                player.faceId = sanitizeId(cosmetics.faceId);
+                player.shirtId = sanitizeId(cosmetics.shirtId);
+                player.pantsId = sanitizeId(cosmetics.pantsId);
+                console.log(`👤 [Server] Player ${player.name} updated Bloxity cosmetics (Skin: '${player.skinId}', Hat: '${player.hatId}')`);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'updateBloxityAvatar' handler:`, err);
+            }
+        });
+        // Initial map egg wave
+        for (let i = 0; i < 5; i++) {
+            this.spawnRandomMapEgg();
+        }
+        this.setSimulationInterval((deltaTime) => this.update(deltaTime), 1000 / 60);
+        console.log("Egg Heist GameRoom running with robust interaction handler & Red Alert / Freeze rules");
+    }
+    // --- UNIFIED SERVER INTERACTION FUNCTION (E KEY) ---
+    handlePlayerInteraction(client, requestedPetId) {
+        const player = this.state.players.get(client.sessionId);
+        if (!player) {
+            console.log(`⚠️ [Server Interact] Rejected: No player found for sessionId ${client.sessionId}`);
+            return;
+        }
+        // 1. Check Freeze or Stun States
+        if (player.frozenTimer > 0) {
+            console.log(`❄️ [Server Interact] REJECTED: Player ${player.name} is FROZEN (${player.frozenTimer}s remaining)`);
+            return;
+        }
+        if (player.trappedTimer > 0 || player.caughtStunTimer > 0) {
+            console.log(`🛑 [Server Interact] REJECTED: Player ${player.name} is stunned or trapped`);
+            return;
+        }
+        // 2. Server Debounce Cooldown Check
+        const now = Date.now();
+        if (now - (player.lastInteractTime || 0) < config_1.GAME_CONFIG.INTERACT_COOLDOWN_MS) {
+            console.log(`⏳ [Server Interact] DEBOUNCED: Player ${player.name} interacting too quickly (${now - player.lastInteractTime}ms since last)`);
+            return;
+        }
+        player.lastInteractTime = now;
+        console.log(`🔍 [Server Interact] Processing E-key interact for ${player.name} at pos (${player.x.toFixed(1)}, ${player.z.toFixed(1)})`);
+        // CONTEXT A: Central Sell Stall (`MARKET_STALL_POS`)
+        const stallPos = config_1.GAME_CONFIG.MARKET_STALL_POS;
+        const distToStall = Math.hypot(player.x - stallPos.x, player.z - stallPos.z);
+        if (distToStall <= config_1.GAME_CONFIG.MARKET_STALL_RADIUS) {
+            if (player.carriedPet) {
+                const pet = player.carriedPet;
+                const basePrice = config_1.PET_SELL_BASE_PRICES[pet.rarity] || 100;
+                const sizeMult = config_1.PET_SIZE_MULTIPLIERS[pet.size] || 1.0;
+                const mutMult = config_1.PET_MUTATION_MULTIPLIERS[pet.mutation] || 1.0;
+                const finalPrice = Math.floor(basePrice * sizeMult * mutMult);
+                player.money += finalPrice;
+                player.carriedPet = null;
+                this.broadcast("serverAnnouncement", {
+                    text: `💰 ${player.name} sold a ${pet.rarity.toUpperCase()} ${pet.name} for $${finalPrice.toLocaleString()}!`,
+                    rarity: pet.rarity,
+                });
+                console.log(`💰 [Server Interact SUCCESS] ${player.name} sold carried pet ${pet.name} for $${finalPrice}`);
                 return;
-            const stallPos = config_1.GAME_CONFIG.MARKET_STALL_POS;
-            const dist = Math.hypot(player.x - stallPos.x, player.z - stallPos.z);
-            if (dist <= config_1.GAME_CONFIG.MARKET_STALL_RADIUS) {
+            }
+            if (player.carriedEggTier) {
                 const tier = player.carriedEggTier;
                 const price = config_1.EGG_SELL_PRICES[tier] || 50;
                 player.money += price;
@@ -54,176 +388,156 @@ class GameRoom extends colyseus_1.Room {
                     text: `🏷️ ${player.name} sold a ${tier.toUpperCase()} egg for $${price.toLocaleString()}!`,
                     rarity: tier,
                 });
+                console.log(`🏷️ [Server Interact SUCCESS] ${player.name} sold carried ${tier} egg for $${price}`);
+                return;
             }
-        });
-        this.onMessage("sellPet", (client, petId) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player)
-                return;
-            const stallPos = config_1.GAME_CONFIG.MARKET_STALL_POS;
-            const dist = Math.hypot(player.x - stallPos.x, player.z - stallPos.z);
-            if (dist <= config_1.GAME_CONFIG.MARKET_STALL_RADIUS) {
-                const petIdx = player.pets.findIndex((p) => p && p.id === petId);
-                if (petIdx !== -1) {
-                    const pet = player.pets[petIdx];
-                    if (!pet)
-                        return;
-                    const price = (config_1.EGG_SELL_PRICES[pet.rarity] || 50) * 1.5;
-                    player.money += price;
-                    player.pets.splice(petIdx, 1);
-                    this.broadcast("serverAnnouncement", {
-                        text: `🐾 ${player.name} sold pet ${pet.name} for $${price.toLocaleString()}!`,
-                        rarity: pet.rarity,
-                    });
-                }
-            }
-        });
-        this.onMessage("fusePets", (client, targetRarity) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player || player.baseIndex < 0)
-                return;
-            // Check distance to base Fuse Machine
-            const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
-            const fuseX = basePos.x + config_1.GAME_CONFIG.FUSE_MACHINE_OFFSET.x;
-            const fuseZ = basePos.z + config_1.GAME_CONFIG.FUSE_MACHINE_OFFSET.z;
-            const dist = Math.hypot(player.x - fuseX, player.z - fuseZ);
-            if (dist <= config_1.GAME_CONFIG.FUSE_MACHINE_RADIUS) {
-                const matchingPets = player.pets.filter((p) => p && p.rarity === targetRarity);
-                if (matchingPets.length >= 3) {
-                    // Remove 3 matching pets
-                    let removedCount = 0;
-                    for (let i = player.pets.length - 1; i >= 0; i--) {
-                        const p = player.pets[i];
-                        if (p && p.rarity === targetRarity) {
-                            player.pets.splice(i, 1);
-                            removedCount++;
-                            if (removedCount >= 3)
-                                break;
-                        }
-                    }
-                    // Generate 1 higher rarity pet
-                    const rarityTiers = ["common", "rare", "epic", "secret", "eternal", "divine"];
-                    const nextRarityIdx = Math.min(rarityTiers.length - 1, rarityTiers.indexOf(targetRarity) + 1);
-                    const nextRarity = rarityTiers[nextRarityIdx];
-                    const fusedPet = this.generatePetForTier(nextRarity);
-                    player.pets.push(fusedPet);
-                    this.broadcast("serverAnnouncement", {
-                        text: `✨ ${player.name} fused 3 ${targetRarity.toUpperCase()} pets into a ${fusedPet.name} (${nextRarity.toUpperCase()})!`,
-                        rarity: nextRarity,
-                    });
-                }
-            }
-        });
-        this.onMessage("useBat", (client) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player || player.batCooldown > 0 || player.trappedTimer > 0)
-                return;
-            player.batCooldown = config_1.GAME_CONFIG.BAT_COOLDOWN_SEC;
-            let hitTarget = false;
-            this.state.players.forEach((target, targetId) => {
-                if (targetId === client.sessionId)
-                    return;
-                const dist = Math.hypot(player.x - target.x, player.z - target.z);
-                if (dist <= config_1.GAME_CONFIG.BAT_RANGE && target.carriedEggTier) {
-                    hitTarget = true;
-                    this.dropEggOnGround(target.x, target.z, target.carriedEggTier, targetId);
-                    target.carriedEggTier = "";
-                    target.carriedEgg = null;
-                    this.broadcast("serverAnnouncement", {
-                        text: `💥 ${player.name} hit ${target.name} with a bat! Egg dropped!`,
-                        rarity: "epic",
-                    });
-                }
-            });
-        });
-        this.onMessage("placeTrap", (client) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player || player.trapCount <= 0 || player.trappedTimer > 0)
-                return;
-            player.trapCount--;
-            const trap = new GameState_1.Trap();
-            trap.id = `trap_${this.nextTrapId++}`;
-            trap.ownerId = client.sessionId;
-            trap.x = player.x;
-            trap.y = 0;
-            trap.z = player.z;
-            this.state.placedTraps.set(trap.id, trap);
-        });
-        this.onMessage("buyTraps", (client) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player || player.trapCount >= config_1.GAME_CONFIG.MAX_TRAPS_PER_PLAYER)
-                return;
-            if (player.money >= config_1.GAME_CONFIG.TRAP_REFILL_COST) {
-                player.money -= config_1.GAME_CONFIG.TRAP_REFILL_COST;
-                player.trapCount = config_1.GAME_CONFIG.MAX_TRAPS_PER_PLAYER;
-            }
-        });
-        // Shop Upgrade Message Listeners
-        this.onMessage("buyTreadmill", (client) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player)
-                return;
-            const currentTier = player.treadmillTier || 1;
-            const nextUpgrade = config_1.TREADMILL_UPGRADES.find((u) => u.tier === currentTier + 1);
-            if (nextUpgrade && player.money >= nextUpgrade.cost) {
-                player.money -= nextUpgrade.cost;
-                player.treadmillTier = nextUpgrade.tier;
-                console.log(`🛍️ [Server] Player ${player.name} upgraded Treadmill to Tier ${nextUpgrade.tier} (${nextUpgrade.name})`);
-            }
-        });
-        this.onMessage("buyBaseUpgrade", (client) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player)
-                return;
-            const currentTier = player.baseTier || 1;
-            const nextUpgrade = config_1.BASE_UPGRADES.find((u) => u.tier === currentTier + 1);
-            if (nextUpgrade && player.money >= nextUpgrade.cost) {
-                player.money -= nextUpgrade.cost;
-                player.baseTier = nextUpgrade.tier;
-                console.log(`🛍️ [Server] Player ${player.name} upgraded Base to Tier ${nextUpgrade.tier} (${nextUpgrade.name})`);
-            }
-        });
-        this.onMessage("buyPetSlot", (client) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player)
-                return;
-            const currentSlots = player.maxPetSlots || 6;
-            const nextUpgrade = config_1.PET_SLOT_UPGRADES.find((u) => u.multiplier > currentSlots);
-            if (nextUpgrade && player.money >= nextUpgrade.cost) {
-                player.money -= nextUpgrade.cost;
-                player.maxPetSlots = nextUpgrade.multiplier;
-                console.log(`🛍️ [Server] Player ${player.name} upgraded Pet Slots to ${nextUpgrade.multiplier}`);
-            }
-        });
-        // Bloxity SDK Avatar Sync Listener
-        this.onMessage("updateBloxityAvatar", (client, cosmetics) => {
-            const player = this.state.players.get(client.sessionId);
-            if (!player || typeof cosmetics !== "object" || cosmetics === null)
-                return;
-            const sanitizeId = (id) => {
-                if (typeof id !== "string")
-                    return "";
-                const trimmed = id.trim();
-                if (trimmed.length > 40)
-                    return "";
-                if (!/^[A-Za-z0-9_-]*$/.test(trimmed))
-                    return "";
-                return trimmed;
-            };
-            player.skinId = sanitizeId(cosmetics.skinId);
-            player.hatId = sanitizeId(cosmetics.hatId);
-            player.hairId = sanitizeId(cosmetics.hairId);
-            player.faceId = sanitizeId(cosmetics.faceId);
-            player.shirtId = sanitizeId(cosmetics.shirtId);
-            player.pantsId = sanitizeId(cosmetics.pantsId);
-            console.log(`👤 [Server] Player ${player.name} updated validated Bloxity cosmetics (Skin: '${player.skinId}', Hat: '${player.hatId}', Hair: '${player.hairId}')`);
-        });
-        // Spawn initial wave of map eggs
-        for (let i = 0; i < 4; i++) {
-            this.spawnRandomMapEgg();
+            console.log(`🛍️ [Server Interact] ${player.name} is at Sell Stall but carrying nothing to sell.`);
+            return;
         }
-        this.setSimulationInterval((deltaTime) => this.update(deltaTime), 1000 / 60);
-        console.log("Egg Heist GameRoom running Phase 3 shop logic");
+        // CONTEXT B: Base Sanctuary Interaction
+        if (player.baseIndex >= 0 && player.baseIndex < config_1.GAME_CONFIG.BASE_POSITIONS.length) {
+            const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
+            const distToBase = Math.hypot(player.x - basePos.x, player.z - basePos.z);
+            if (distToBase <= 8.0) {
+                // Option 1: Place carried pet into base slot
+                if (player.carriedPet) {
+                    const maxSlots = player.maxPetSlots || config_1.GAME_CONFIG.MAX_PET_SLOTS;
+                    if (player.pets.length < maxSlots) {
+                        const pet = player.carriedPet;
+                        pet.isGroundPet = false;
+                        pet.carriedBy = "";
+                        player.pets.push(pet);
+                        player.carriedPet = null;
+                        console.log(`🏠 [Server Interact SUCCESS] ${player.name} placed pet ${pet.name} into base pet slot!`);
+                        return;
+                    }
+                }
+            }
+        }
+        // CONTEXT C: Ground Pet Pickup
+        if (!player.carriedEggTier && !player.carriedPet) {
+            for (let i = 0; i < player.groundPets.length; i++) {
+                const pet = player.groundPets[i];
+                if (!pet)
+                    continue;
+                if (requestedPetId && pet.id !== requestedPetId)
+                    continue;
+                const dist = Math.hypot(player.x - pet.x, player.z - pet.z);
+                if (dist <= config_1.GAME_CONFIG.PET_PICKUP_RADIUS + 1.2) {
+                    player.carriedPet = pet;
+                    player.groundPets.splice(i, 1);
+                    console.log(`🐾 [Server Interact SUCCESS] ${player.name} picked up ground pet ${pet.name}!`);
+                    return;
+                }
+            }
+        }
+        // CONTEXT D: Wild Map Egg Pickup & Guard Check
+        if (!player.carriedEggTier && !player.carriedPet) {
+            let closestEggId = null;
+            let closestEgg = null;
+            let closestDist = config_1.GAME_CONFIG.PICKUP_RADIUS + 1.0;
+            const mapEggEntries = Array.from(this.state.mapEggs.entries());
+            for (const [eggId, egg] of mapEggEntries) {
+                if (!egg || egg.dropCooldown > 0)
+                    continue;
+                const dist = Math.hypot(player.x - egg.x, player.z - egg.z);
+                if (dist <= closestDist) {
+                    closestDist = dist;
+                    closestEggId = eggId;
+                    closestEgg = egg;
+                }
+            }
+            if (closestEgg && closestEggId) {
+                const foundEgg = closestEgg;
+                if (foundEgg.isGuarded) {
+                    if (foundEgg.guardState === "chasing" || foundEgg.guardTargetId === client.sessionId) {
+                        this.triggerRedAlert(player, "Attempted to steal guarded egg while guard animal is awake!");
+                        console.log(`🚨 [Server Interact BLOCKED] ${player.name} attempt to grab guarded egg BLOCKED by awake guard!`);
+                        return;
+                    }
+                    foundEgg.guardState = "chasing";
+                    foundEgg.guardTargetId = client.sessionId;
+                    player.carriedEggTier = foundEgg.tier;
+                    player.carriedEgg = foundEgg;
+                    this.state.mapEggs.delete(closestEggId);
+                    this.broadcast("serverAnnouncement", {
+                        text: `🥚 ${player.name} picked up a GUARDED ${foundEgg.tier.toUpperCase()} egg! Guard animal is chasing!`,
+                        rarity: foundEgg.tier,
+                    });
+                    console.log(`🥚 [Server Interact SUCCESS] ${player.name} picked up guarded egg (${foundEgg.tier})! Guard animal activated.`);
+                    return;
+                }
+                player.carriedEggTier = foundEgg.tier;
+                player.carriedEgg = foundEgg;
+                this.state.mapEggs.delete(closestEggId);
+                console.log(`🥚 [Server Interact SUCCESS] ${player.name} picked up map egg (${foundEgg.tier})`);
+                return;
+            }
+        }
+        console.log(`❓ [Server Interact] ${player.name} pressed E, but no interactable object within range.`);
+    }
+    // --- RED ALERT & FREEZE SYSTEM ---
+    triggerRedAlert(player, reason) {
+        if (player.frozenTimer > 0)
+            return;
+        player.redAlerts += 1;
+        player.lastAlertTime = Date.now();
+        console.log(`🚨 [Server] RED ALERT (${player.redAlerts}/${config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT}) for ${player.name}: ${reason}`);
+        // Send targeted client message for screen flash & sound
+        const client = this.clients.find((c) => c.sessionId === player.id);
+        if (client) {
+            client.send("redAlert", {
+                count: player.redAlerts,
+                max: config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT,
+                reason,
+            });
+        }
+        this.broadcast("serverAnnouncement", {
+            text: `🚨 RED ALERT! (${player.redAlerts}/${config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT}) for ${player.name}! Guard blocked pickup!`,
+            rarity: "epic",
+        });
+        if (player.redAlerts >= config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT) {
+            this.freezePlayer(player, config_1.GAME_CONFIG.FREEZE_SECONDS);
+        }
+    }
+    freezePlayer(player, freezeSeconds) {
+        const freezeEndTime = Date.now() + freezeSeconds * 1000;
+        player.freezeEndTime = freezeEndTime;
+        player.frozenTimer = freezeSeconds;
+        player.redAlerts = config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT;
+        // Drop carried item onto ground for rivals to take
+        if (player.carriedEggTier) {
+            this.dropEggOnGround(player.x, player.z, player.carriedEggTier, player.id);
+            player.carriedEggTier = "";
+            player.carriedEgg = null;
+        }
+        if (player.carriedPet) {
+            const pet = player.carriedPet;
+            pet.x = player.x;
+            pet.y = 0;
+            pet.z = player.z;
+            pet.isGroundPet = true;
+            pet.carriedBy = "";
+            player.groundPets.push(pet);
+            player.carriedPet = null;
+        }
+        // Persist freeze across disconnects
+        const client = this.clients.find((c) => c.sessionId === player.id);
+        if (client) {
+            const key = this.getPlayerKey(client, player);
+            this.persistentFreezes.set(key, { freezeEndTime, redAlerts: 3 });
+        }
+        console.log(`❄️ [Server] PLAYER FROZEN: ${player.name} frozen for ${freezeSeconds}s until ${new Date(freezeEndTime).toISOString()}`);
+        this.broadcast("serverAnnouncement", {
+            text: `🚨 ${player.name} triggered 3 RED ALERTS and is FROZEN for 3 minutes! ❄️`,
+            rarity: "divine",
+        });
+    }
+    getPlayerKey(client, player) {
+        if (player.name && !player.name.startsWith("Player_") && !player.name.startsWith("EggHunter_")) {
+            return player.name;
+        }
+        return client.sessionId;
     }
     onJoin(client, options) {
         console.log(`🎮 [Server] Client joining room: ${client.sessionId}`);
@@ -258,6 +572,15 @@ class GameRoom extends colyseus_1.Room {
             player.z = (Math.random() - 0.5) * 12;
         }
         player.rotationY = 0;
+        // Check for persistent freeze from prior session
+        const key = this.getPlayerKey(client, player);
+        const persistent = this.persistentFreezes.get(key);
+        if (persistent && persistent.freezeEndTime > Date.now()) {
+            player.freezeEndTime = persistent.freezeEndTime;
+            player.frozenTimer = Math.ceil((persistent.freezeEndTime - Date.now()) / 1000);
+            player.redAlerts = 3;
+            console.log(`❄️ [Server] Restored active freeze for rejoining player ${player.name} (${player.frozenTimer}s remaining)`);
+        }
         this.state.players.set(client.sessionId, player);
         this.playerInputs.set(client.sessionId, { moveX: 0, moveZ: 0, rotationY: 0 });
     }
@@ -267,6 +590,14 @@ class GameRoom extends colyseus_1.Room {
         if (player) {
             if (player.carriedEggTier) {
                 this.dropEggOnGround(player.x, player.z, player.carriedEggTier, client.sessionId);
+            }
+            if (player.carriedPet) {
+                const pet = player.carriedPet;
+                pet.x = player.x;
+                pet.z = player.z;
+                pet.isGroundPet = true;
+                player.groundPets.push(pet);
+                player.carriedPet = null;
             }
             if (player.baseIndex !== -1 && player.baseIndex < this.baseSlots.length) {
                 this.baseSlots[player.baseIndex] = null;
@@ -280,7 +611,8 @@ class GameRoom extends colyseus_1.Room {
     }
     update(deltaTimeMs) {
         const dt = deltaTimeMs / 1000;
-        // Day/Night Cycle (120 seconds full day/night loop)
+        const nowMs = Date.now();
+        // Day/Night Cycle
         this.state.dayNightProgress = (this.state.dayNightProgress + dt / 120) % 1;
         // Special Egg Countdown Timer
         this.specialEggTimer -= dt;
@@ -302,32 +634,137 @@ class GameRoom extends colyseus_1.Room {
             this.spawnTimer = 0;
             this.spawnRandomMapEgg();
         }
-        // 2. Cooldowns
-        this.state.mapEggs.forEach((egg) => {
+        // 2. Egg Cooldowns & Guard Animal Updates
+        this.state.mapEggs.forEach((egg, eggId) => {
             if (egg.dropCooldown > 0) {
                 egg.dropCooldown = Math.max(0, egg.dropCooldown - dt);
             }
+            if (egg.isGuarded) {
+                if (egg.guardState === "chasing" && egg.guardTargetId) {
+                    const targetPlayer = this.state.players.get(egg.guardTargetId);
+                    let shouldStopChase = false;
+                    if (!targetPlayer || !targetPlayer.carriedEggTier || targetPlayer.carriedEgg?.id !== egg.id) {
+                        shouldStopChase = true;
+                    }
+                    else {
+                        if (targetPlayer.baseIndex >= 0 && targetPlayer.baseIndex < config_1.GAME_CONFIG.BASE_POSITIONS.length) {
+                            const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[targetPlayer.baseIndex];
+                            const distToBase = Math.hypot(targetPlayer.x - basePos.x, targetPlayer.z - basePos.z);
+                            if (distToBase <= 6.0) {
+                                shouldStopChase = true;
+                            }
+                        }
+                        const distFromEggOrigin = Math.hypot(egg.guardX - egg.x, egg.guardZ - egg.z);
+                        if (distFromEggOrigin > config_1.GAME_CONFIG.GUARD_CHASE_MAX_DIST) {
+                            shouldStopChase = true;
+                        }
+                        if (!shouldStopChase) {
+                            const dx = targetPlayer.x - egg.guardX;
+                            const dz = targetPlayer.z - egg.guardZ;
+                            const distToPlayer = Math.hypot(dx, dz);
+                            const chaseSpeed = targetPlayer.speed * config_1.GAME_CONFIG.GUARD_CHASE_SPEED_RATIO;
+                            if (distToPlayer > 0.1) {
+                                egg.guardX += (dx / distToPlayer) * chaseSpeed * dt;
+                                egg.guardZ += (dz / distToPlayer) * chaseSpeed * dt;
+                            }
+                            if (distToPlayer <= config_1.GAME_CONFIG.GUARD_CATCH_RADIUS) {
+                                if (targetPlayer.invulnerableTimer <= 0) {
+                                    this.executeGuardCatch(targetPlayer, egg);
+                                    shouldStopChase = true;
+                                }
+                            }
+                        }
+                    }
+                    if (shouldStopChase) {
+                        egg.guardState = "returning";
+                        egg.guardTargetId = "";
+                    }
+                }
+                else if (egg.guardState === "returning") {
+                    const targetX = egg.x + 0.8;
+                    const targetZ = egg.z + 0.8;
+                    const dx = targetX - egg.guardX;
+                    const dz = targetZ - egg.guardZ;
+                    const distToHome = Math.hypot(dx, dz);
+                    if (distToHome <= 0.5) {
+                        egg.guardX = targetX;
+                        egg.guardZ = targetZ;
+                        egg.guardState = "sleeping";
+                    }
+                    else {
+                        const returnSpeed = 6.0;
+                        egg.guardX += (dx / distToHome) * returnSpeed * dt;
+                        egg.guardZ += (dz / distToHome) * returnSpeed * dt;
+                    }
+                }
+            }
         });
-        // 3. Players update
+        // 3. Players Loop & Freeze Updates
+        let highestMoney = -1;
+        let richestId = "";
         this.state.players.forEach((player, sessionId) => {
-            // Cooldowns and Timers
-            if (player.batCooldown > 0) {
+            if (player.money > highestMoney) {
+                highestMoney = player.money;
+                richestId = sessionId;
+            }
+            // Freeze Expiry & Countdown Update
+            if (player.freezeEndTime > 0) {
+                if (nowMs >= player.freezeEndTime) {
+                    console.log(`☀️ [Server] Freeze EXPIRED for ${player.name}`);
+                    player.freezeEndTime = 0;
+                    player.frozenTimer = 0;
+                    player.redAlerts = 0;
+                    this.broadcast("serverAnnouncement", {
+                        text: `☀️ ${player.name} is no longer frozen!`,
+                        rarity: "common",
+                    });
+                    const client = this.clients.find((c) => c.sessionId === sessionId);
+                    if (client) {
+                        const key = this.getPlayerKey(client, player);
+                        this.persistentFreezes.delete(key);
+                    }
+                }
+                else {
+                    player.frozenTimer = Math.ceil((player.freezeEndTime - nowMs) / 1000);
+                    player.speed = 0;
+                    const input = this.playerInputs.get(sessionId);
+                    if (input) {
+                        input.moveX = 0;
+                        input.moveZ = 0;
+                    }
+                }
+            }
+            else if (player.redAlerts > 0) {
+                if (player.lastAlertTime > 0 && nowMs - player.lastAlertTime >= config_1.GAME_CONFIG.RED_ALERT_RESET_SECONDS * 1000) {
+                    console.log(`🔄 [Server] Red alert count reset to 0 for ${player.name} after 120s cooldown`);
+                    player.redAlerts = 0;
+                    player.lastAlertTime = 0;
+                }
+            }
+            // Timers & Cooldowns
+            if (player.batCooldown > 0)
                 player.batCooldown = Math.max(0, player.batCooldown - dt);
-            }
-            if (player.trappedTimer > 0) {
+            if (player.trappedTimer > 0)
                 player.trappedTimer = Math.max(0, player.trappedTimer - dt);
-            }
+            if (player.caughtStunTimer > 0)
+                player.caughtStunTimer = Math.max(0, player.caughtStunTimer - dt);
+            if (player.invulnerableTimer > 0)
+                player.invulnerableTimer = Math.max(0, player.invulnerableTimer - dt);
+            if (player.frozenTimer > 0)
+                return;
             const input = this.playerInputs.get(sessionId);
             if (!input)
                 return;
-            // Disable movement if player is trapped
-            if (player.trappedTimer > 0) {
+            if (player.trappedTimer > 0 || player.caughtStunTimer > 0) {
                 input.moveX = 0;
                 input.moveZ = 0;
             }
             let effectiveSpeed = Math.min(config_1.GAME_CONFIG.MAX_SPEED_CAP, config_1.GAME_CONFIG.BASE_SPEED * (1 + player.speedStat * config_1.GAME_CONFIG.SPEED_SCALE_FACTOR));
             if (player.carriedEggTier && config_1.EGG_TIERS[player.carriedEggTier]) {
                 effectiveSpeed *= config_1.EGG_TIERS[player.carriedEggTier].weightMultiplier;
+            }
+            else if (player.carriedPet) {
+                effectiveSpeed *= config_1.PET_WEIGHT_MULTIPLIERS[player.carriedPet.rarity] || 0.85;
             }
             player.speed = effectiveSpeed;
             if (input.moveX !== 0 || input.moveZ !== 0) {
@@ -337,7 +774,7 @@ class GameRoom extends colyseus_1.Room {
                 player.z = Math.max(-config_1.GAME_CONFIG.MAP_LIMIT, Math.min(config_1.GAME_CONFIG.MAP_LIMIT, player.z + dz));
             }
             player.rotationY = input.rotationY;
-            // Treadmill Speed Growth (Treadmill Tier multiplier!)
+            // Treadmill Speed Growth
             if (player.baseIndex >= 0 && player.baseIndex < config_1.GAME_CONFIG.BASE_POSITIONS.length) {
                 const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
                 const treadmillX = basePos.x + config_1.GAME_CONFIG.TREADMILL_OFFSET.x;
@@ -349,291 +786,214 @@ class GameRoom extends colyseus_1.Room {
                 player.onTreadmill = onOwnTreadmill;
                 if (onOwnTreadmill) {
                     const tmUpgrade = config_1.TREADMILL_UPGRADES[Math.min(config_1.TREADMILL_UPGRADES.length - 1, (player.treadmillTier || 1) - 1)];
-                    const tmMult = tmUpgrade ? tmUpgrade.multiplier : 1.0;
-                    const angelMult = player.equippedAngelicTreadmill ? config_1.GAME_CONFIG.ANGELIC_SPEED_GROWTH_MULT : 1.0;
-                    player.speedStat += config_1.GAME_CONFIG.SPEED_GROWTH_PER_SEC * tmMult * angelMult * dt;
+                    const mult = (tmUpgrade?.multiplier || 1.0) * (player.equippedAngelicTreadmill ? config_1.GAME_CONFIG.ANGELIC_SPEED_GROWTH_MULT : 1.0);
+                    player.speedStat += config_1.GAME_CONFIG.SPEED_GROWTH_PER_SEC * mult * dt;
                 }
             }
-            else {
-                player.onTreadmill = false;
-            }
-            // 4. Pickup
-            if (!player.carriedEggTier && player.trappedTimer <= 0) {
-                this.state.mapEggs.forEach((egg, eggId) => {
-                    if (egg.dropCooldown > 0 && egg.lastDroppedBy === sessionId)
-                        return;
-                    const dist = Math.hypot(player.x - egg.x, player.z - egg.z);
-                    if (dist <= config_1.GAME_CONFIG.PICKUP_RADIUS) {
-                        player.carriedEggTier = egg.tier;
-                        const newEgg = new GameState_1.Egg();
-                        newEgg.id = egg.id;
-                        newEgg.tier = egg.tier;
-                        newEgg.carriedBy = sessionId;
-                        player.carriedEgg = newEgg;
-                        // Wake chicken if egg has chicken!
-                        if (egg.hasChicken) {
-                            const chicken = new GameState_1.ChasingChicken();
-                            chicken.id = `chicken_${this.nextChickenId++}`;
-                            chicken.targetPlayerId = sessionId;
-                            chicken.x = egg.x;
-                            chicken.y = 0;
-                            chicken.z = egg.z;
-                            chicken.lifetime = config_1.GAME_CONFIG.CHICKEN_CHASE_DURATION;
-                            this.state.chasingChickens.set(chicken.id, chicken);
+            // Incubator Egg Hatching
+            if (player.incubatorEggs) {
+                for (let i = player.incubatorEggs.length - 1; i >= 0; i--) {
+                    const egg = player.incubatorEggs[i];
+                    if (!egg)
+                        continue;
+                    if (egg.hatchTimeRemaining > 0) {
+                        egg.hatchTimeRemaining -= dt;
+                        if (egg.hatchTimeRemaining <= 0) {
+                            const hatchedPet = this.generatePetForTier(egg.tier);
+                            // Hatch onto ground at base as physical carryable pet
+                            hatchedPet.x = player.x + (Math.random() - 0.5) * 2;
+                            hatchedPet.y = 0;
+                            hatchedPet.z = player.z + (Math.random() - 0.5) * 2;
+                            hatchedPet.isGroundPet = true;
+                            hatchedPet.baseIndex = player.baseIndex;
+                            player.groundPets.push(hatchedPet);
+                            player.incubatorEggs.splice(i, 1);
+                            player.hatchedEggsTotal += 1;
+                            player.lastHatchedReward = JSON.stringify({
+                                name: hatchedPet.name,
+                                rarity: hatchedPet.rarity,
+                                size: hatchedPet.size,
+                                mutation: hatchedPet.mutation,
+                                timestamp: Date.now(),
+                            });
                             this.broadcast("serverAnnouncement", {
-                                text: `🐓 ${player.name} woke up a sleeping chicken! It's chasing them!`,
-                                rarity: "rare",
+                                text: `🐣 ${player.name} hatched a ${hatchedPet.rarity.toUpperCase()} ${hatchedPet.name}! Pick it up at base!`,
+                                rarity: hatchedPet.rarity,
                             });
                         }
-                        this.state.mapEggs.delete(eggId);
-                    }
-                });
-            }
-            // 5. Deposit into Base Incubator (Base Tier determines incubator capacity!)
-            if (player.carriedEggTier && player.baseIndex >= 0) {
-                const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
-                const incX = basePos.x + config_1.GAME_CONFIG.INCUBATOR_OFFSET.x;
-                const incZ = basePos.z + config_1.GAME_CONFIG.INCUBATOR_OFFSET.z;
-                const halfW = config_1.GAME_CONFIG.INCUBATOR_SIZE.width / 2;
-                const halfL = config_1.GAME_CONFIG.INCUBATOR_SIZE.length / 2;
-                const insideOwnIncubator = Math.abs(player.x - incX) <= halfW &&
-                    Math.abs(player.z - incZ) <= halfL;
-                const baseUpgrade = config_1.BASE_UPGRADES[Math.min(config_1.BASE_UPGRADES.length - 1, (player.baseTier || 1) - 1)];
-                const maxIncCapacity = baseUpgrade ? baseUpgrade.multiplier : config_1.GAME_CONFIG.MAX_INCUBATOR_EGGS;
-                if (insideOwnIncubator && player.incubatorEggs.length < maxIncCapacity) {
-                    const depositedEgg = new GameState_1.Egg();
-                    depositedEgg.id = `inc_egg_${this.nextEggId++}`;
-                    depositedEgg.tier = player.carriedEggTier;
-                    depositedEgg.baseIndex = player.baseIndex;
-                    depositedEgg.hatchTimeRemaining = config_1.EGG_TIERS[player.carriedEggTier].hatchTimeSec;
-                    player.incubatorEggs.push(depositedEgg);
-                    player.carriedEggTier = "";
-                    player.carriedEgg = null;
-                }
-            }
-            // 6. Steal Egg from Opponent Incubator
-            if (!player.carriedEggTier) {
-                config_1.GAME_CONFIG.BASE_POSITIONS.forEach((basePos, bIdx) => {
-                    if (bIdx === player.baseIndex)
-                        return;
-                    const incX = basePos.x + config_1.GAME_CONFIG.INCUBATOR_OFFSET.x;
-                    const incZ = basePos.z + config_1.GAME_CONFIG.INCUBATOR_OFFSET.z;
-                    const halfW = config_1.GAME_CONFIG.INCUBATOR_SIZE.width / 2;
-                    const halfL = config_1.GAME_CONFIG.INCUBATOR_SIZE.length / 2;
-                    const insideOpponentIncubator = Math.abs(player.x - incX) <= halfW &&
-                        Math.abs(player.z - incZ) <= halfL;
-                    if (insideOpponentIncubator) {
-                        this.state.players.forEach((targetPlayer) => {
-                            if (targetPlayer.baseIndex === bIdx && targetPlayer.incubatorEggs.length > 0) {
-                                const stolenEgg = targetPlayer.incubatorEggs.pop();
-                                if (stolenEgg) {
-                                    player.carriedEggTier = stolenEgg.tier;
-                                    const newEgg = new GameState_1.Egg();
-                                    newEgg.id = stolenEgg.id;
-                                    newEgg.tier = stolenEgg.tier;
-                                    newEgg.carriedBy = sessionId;
-                                    player.carriedEgg = newEgg;
-                                }
-                            }
-                        });
-                    }
-                });
-            }
-            // 7. Hatching
-            for (let i = player.incubatorEggs.length - 1; i >= 0; i--) {
-                const egg = player.incubatorEggs[i];
-                if (!egg)
-                    continue;
-                egg.hatchTimeRemaining -= dt;
-                if (egg.hatchTimeRemaining <= 0) {
-                    player.incubatorEggs.splice(i, 1);
-                    const pet = this.generatePetForTier(egg.tier);
-                    const maxPetCap = player.maxPetSlots || config_1.GAME_CONFIG.MAX_PET_SLOTS;
-                    if (player.pets.length < maxPetCap) {
-                        player.pets.push(pet);
-                    }
-                    let rewardedName = "";
-                    let rewardedRarity = pet.rarity;
-                    if (Math.random() < config_1.GAME_CONFIG.DIVINE_TRAIL_CHANCE) {
-                        player.hasDivineTrail = true;
-                        player.equippedDivineTrail = true;
-                        rewardedName = "Divine Rainbow Trail";
-                        rewardedRarity = "Divine";
-                    }
-                    else if (Math.random() < config_1.GAME_CONFIG.ANGELIC_TREADMILL_CHANCE) {
-                        player.hasAngelicTreadmill = true;
-                        player.equippedAngelicTreadmill = true;
-                        rewardedName = "Angelic Treadmill";
-                        rewardedRarity = "Divine";
-                    }
-                    else if (["secret", "eternal", "divine"].includes(egg.tier)) {
-                        rewardedName = `${pet.name} (${pet.mutation !== "none" ? pet.mutation : pet.size})`;
-                    }
-                    if (rewardedName) {
-                        player.lastHatchedReward = JSON.stringify({
-                            name: rewardedName,
-                            rarity: rewardedRarity,
-                            timestamp: Date.now(),
-                        });
                     }
                 }
             }
-            // 8. Pet Income
-            let totalPetIncome = 0;
-            player.pets.forEach((pet) => {
-                totalPetIncome += pet.moneyPerSec;
-            });
-            player.money += totalPetIncome * dt;
+            // Passive Pet Income
+            if (player.pets) {
+                let petIncomePerSec = 0;
+                player.pets.forEach((pet) => {
+                    petIncomePerSec += pet.moneyPerSec || 0;
+                });
+                player.money += petIncomePerSec * dt;
+            }
         });
-        // 9. Player Collision Steal
-        const playerEntries = Array.from(this.state.players.entries());
-        for (let i = 0; i < playerEntries.length; i++) {
-            for (let j = i + 1; j < playerEntries.length; j++) {
-                const [idA, playerA] = playerEntries[i];
-                const [idB, playerB] = playerEntries[j];
-                const dist = Math.hypot(playerA.x - playerB.x, playerA.z - playerB.z);
+        this.state.richestPlayerId = richestId;
+        // 4. Stealing Collision Logic
+        const playerArray = Array.from(this.state.players.values());
+        for (let i = 0; i < playerArray.length; i++) {
+            const p1 = playerArray[i];
+            if (p1.frozenTimer > 0)
+                continue;
+            for (let j = i + 1; j < playerArray.length; j++) {
+                const p2 = playerArray[j];
+                if (p2.frozenTimer > 0)
+                    continue;
+                const dist = Math.hypot(p1.x - p2.x, p1.z - p2.z);
                 if (dist <= config_1.GAME_CONFIG.STEAL_COLLISION_RADIUS) {
-                    if (playerA.carriedEggTier) {
-                        this.dropEggOnGround(playerA.x, playerA.z, playerA.carriedEggTier, idA);
-                        playerA.carriedEggTier = "";
-                        playerA.carriedEgg = null;
+                    // Egg Steal
+                    if (p1.carriedEggTier && !p2.carriedEggTier && !p2.carriedPet) {
+                        p2.carriedEggTier = p1.carriedEggTier;
+                        p2.carriedEgg = p1.carriedEgg;
+                        p1.carriedEggTier = "";
+                        p1.carriedEgg = null;
+                        this.broadcast("serverAnnouncement", {
+                            text: `🥷 ${p2.name} STOLE an egg from ${p1.name}!`,
+                            rarity: "epic",
+                        });
                     }
-                    if (playerB.carriedEggTier) {
-                        this.dropEggOnGround(playerB.x, playerB.z, playerB.carriedEggTier, idB);
-                        playerB.carriedEggTier = "";
-                        playerB.carriedEgg = null;
+                    else if (p2.carriedEggTier && !p1.carriedEggTier && !p1.carriedPet) {
+                        p1.carriedEggTier = p2.carriedEggTier;
+                        p1.carriedEgg = p2.carriedEgg;
+                        p2.carriedEggTier = "";
+                        p2.carriedEgg = null;
+                        this.broadcast("serverAnnouncement", {
+                            text: `🥷 ${p1.name} STOLE an egg from ${p2.name}!`,
+                            rarity: "epic",
+                        });
+                    }
+                    // Pet Steal
+                    else if (p1.carriedPet && !p2.carriedEggTier && !p2.carriedPet) {
+                        p2.carriedPet = p1.carriedPet;
+                        p1.carriedPet = null;
+                        this.broadcast("serverAnnouncement", {
+                            text: `🥷 ${p2.name} STOLE a pet from ${p1.name}!`,
+                            rarity: "epic",
+                        });
+                    }
+                    else if (p2.carriedPet && !p1.carriedEggTier && !p1.carriedPet) {
+                        p1.carriedPet = p2.carriedPet;
+                        p2.carriedPet = null;
+                        this.broadcast("serverAnnouncement", {
+                            text: `🥷 ${p1.name} STOLE a pet from ${p2.name}!`,
+                            rarity: "epic",
+                        });
                     }
                 }
             }
         }
-        // 10. Chasing Chickens Pursuit & Pecking
-        this.state.chasingChickens.forEach((chicken, chickenId) => {
-            chicken.lifetime -= dt;
-            const target = this.state.players.get(chicken.targetPlayerId);
-            if (target && chicken.lifetime > 0) {
-                const dx = target.x - chicken.x;
-                const dz = target.z - chicken.z;
-                const dist = Math.hypot(dx, dz);
-                if (dist > 0.1) {
-                    chicken.x += (dx / dist) * config_1.GAME_CONFIG.CHICKEN_CHASE_SPEED * dt;
-                    chicken.z += (dz / dist) * config_1.GAME_CONFIG.CHICKEN_CHASE_SPEED * dt;
-                }
-                if (dist <= 1.2 && target.carriedEggTier) {
-                    this.dropEggOnGround(target.x, target.z, target.carriedEggTier, target.id);
-                    target.carriedEggTier = "";
-                    target.carriedEgg = null;
-                    this.broadcast("serverAnnouncement", {
-                        text: `🐓 Angry chicken pecked ${target.name}! Egg dropped!`,
-                        rarity: "rare",
-                    });
-                    this.state.chasingChickens.delete(chickenId);
-                }
+        // 5. Dropped Coin Pickups
+        this.state.droppedCoins.forEach((coin, coinId) => {
+            coin.despawnTimer -= dt;
+            if (coin.despawnTimer <= 0) {
+                this.state.droppedCoins.delete(coinId);
+                return;
             }
-            else {
-                this.state.chasingChickens.delete(chickenId);
-            }
-        });
-        // 11. Trap Triggering (7s Stun)
-        this.state.placedTraps.forEach((trap, trapId) => {
-            this.state.players.forEach((player, sessionId) => {
-                if (sessionId === trap.ownerId)
+            this.state.players.forEach((player) => {
+                if (player.frozenTimer > 0)
                     return;
-                const dist = Math.hypot(player.x - trap.x, player.z - trap.z);
-                if (dist <= config_1.GAME_CONFIG.TRAP_TRIGGER_RADIUS && player.trappedTimer <= 0) {
-                    player.trappedTimer = config_1.GAME_CONFIG.TRAP_STUN_DURATION_SEC;
-                    this.state.placedTraps.delete(trapId);
-                    this.broadcast("serverAnnouncement", {
-                        text: `🚨 ${player.name} stepped on a trap! TRAPPED for 7s!`,
-                        rarity: "epic",
-                    });
+                const dist = Math.hypot(player.x - coin.x, player.z - coin.z);
+                if (dist <= config_1.GAME_CONFIG.COIN_PICKUP_RADIUS) {
+                    player.money += coin.amount;
+                    this.state.droppedCoins.delete(coinId);
+                    console.log(`🪙 [Server] ${player.name} picked up coin worth $${coin.amount}`);
                 }
             });
         });
     }
-    generatePetForTier(tier) {
-        const pet = new GameState_1.Pet();
-        pet.id = `pet_${this.nextPetId++}`;
-        pet.rarity = tier;
-        const names = config_1.PET_NAMES[tier] || config_1.PET_NAMES.common;
-        pet.name = names[Math.floor(Math.random() * names.length)];
-        const sRand = Math.random();
-        let sizeMult = 1.0;
-        if (sRand < 0.20) {
-            pet.size = "small";
-            sizeMult = 0.8;
+    executeGuardCatch(targetPlayer, egg) {
+        const rawPenalty = targetPlayer.money * (config_1.GAME_CONFIG.GUARD_PENALTY_PERCENT_MIN + Math.random() * (config_1.GAME_CONFIG.GUARD_PENALTY_PERCENT_MAX - config_1.GAME_CONFIG.GUARD_PENALTY_PERCENT_MIN));
+        let penalty = Math.max(config_1.GAME_CONFIG.GUARD_PENALTY_MIN, Math.min(config_1.GAME_CONFIG.GUARD_PENALTY_MAX, Math.floor(rawPenalty)));
+        if (targetPlayer.money <= config_1.GAME_CONFIG.NEW_PLAYER_MONEY_THRESHOLD) {
+            penalty = Math.min(targetPlayer.money, config_1.GAME_CONFIG.NEW_PLAYER_MAX_LOSS);
         }
-        else if (sRand < 0.90) {
-            pet.size = "normal";
-            sizeMult = 1.0;
+        targetPlayer.money = Math.max(0, targetPlayer.money - penalty);
+        targetPlayer.caughtStunTimer = config_1.GAME_CONFIG.CAUGHT_STUN_DURATION_SEC;
+        targetPlayer.invulnerableTimer = config_1.GAME_CONFIG.CAUGHT_INVULNERABILITY_SEC;
+        // Drop egg
+        if (targetPlayer.carriedEggTier) {
+            this.dropEggOnGround(targetPlayer.x, targetPlayer.z, targetPlayer.carriedEggTier, targetPlayer.id);
+            targetPlayer.carriedEggTier = "";
+            targetPlayer.carriedEgg = null;
         }
-        else {
-            pet.size = "giant";
-            sizeMult = 1.8;
+        // Spawn 70% of lost money as coins
+        const droppedAmount = Math.floor(penalty * 0.7);
+        if (droppedAmount > 0) {
+            const coinCount = Math.min(5, Math.max(1, Math.floor(droppedAmount / 10)));
+            const perCoin = Math.floor(droppedAmount / coinCount);
+            for (let i = 0; i < coinCount; i++) {
+                const coin = new GameState_1.DroppedCoin();
+                coin.id = `coin_${this.nextCoinId++}`;
+                coin.x = targetPlayer.x + (Math.random() - 0.5) * 3;
+                coin.z = targetPlayer.z + (Math.random() - 0.5) * 3;
+                coin.amount = perCoin;
+                coin.despawnTimer = config_1.GAME_CONFIG.COIN_DESPAWN_SEC;
+                this.state.droppedCoins.set(coin.id, coin);
+            }
         }
-        const mRand = Math.random();
-        let mutMult = 1.0;
-        if (mRand < 0.75) {
-            pet.mutation = "none";
-            mutMult = 1.0;
+        this.broadcast("serverAnnouncement", {
+            text: `🚨 ${targetPlayer.name} caught by ${egg.guardType.toUpperCase()} guard! Lost $${penalty.toLocaleString()}!`,
+            rarity: "secret",
+        });
+        console.log(`🚨 [Server] GUARD CATCH: ${targetPlayer.name} caught! Lost $${penalty}, stunned for 1.5s`);
+    }
+    dropEggOnGround(x, z, tier, dropperSessionId) {
+        const isGuarded = (config_1.GUARDED_CHANCE_BY_TIER[tier] || 0) > Math.random();
+        const egg = new GameState_1.Egg();
+        egg.id = `egg_${this.nextEggId++}`;
+        egg.x = x + (Math.random() - 0.5) * 2;
+        egg.z = z + (Math.random() - 0.5) * 2;
+        egg.tier = tier;
+        egg.dropCooldown = config_1.GAME_CONFIG.DROP_COOLDOWN_SEC;
+        egg.isGuarded = isGuarded;
+        if (isGuarded) {
+            egg.guardType = config_1.GUARD_ANIMAL_TYPES[Math.floor(Math.random() * config_1.GUARD_ANIMAL_TYPES.length)];
+            egg.guardX = egg.x + 0.8;
+            egg.guardZ = egg.z + 0.8;
+            egg.guardState = "sleeping";
         }
-        else if (mRand < 0.90) {
-            pet.mutation = "golden";
-            mutMult = 2.0;
-        }
-        else if (mRand < 0.98) {
-            pet.mutation = "rainbow";
-            mutMult = 4.0;
-        }
-        else {
-            pet.mutation = "shiny";
-            mutMult = 8.0;
-        }
-        const tierMult = config_1.EGG_TIERS[tier] ? config_1.EGG_TIERS[tier].moneyMultiplier : 1.0;
-        pet.moneyPerSec = 5.0 * tierMult * sizeMult * mutMult;
-        return pet;
+        this.state.mapEggs.set(egg.id, egg);
     }
     spawnRandomMapEgg(forcedTier) {
-        const tier = forcedTier || this.rollRandomEggTier();
-        const egg = new GameState_1.Egg();
-        egg.id = `map_egg_${this.nextEggId++}`;
-        egg.tier = tier;
-        const angle = Math.random() * Math.PI * 2;
-        const r = 3 + Math.random() * (config_1.GAME_CONFIG.SPAWN_RADIUS - 3);
-        egg.x = Math.cos(angle) * r;
-        egg.y = 0;
-        egg.z = Math.sin(angle) * r;
-        egg.hasChicken = Math.random() < 0.35;
-        this.state.mapEggs.set(egg.id, egg);
-        if (["secret", "eternal", "divine"].includes(tier)) {
-            const tierConfig = config_1.EGG_TIERS[tier];
-            const tierName = tierConfig ? tierConfig.name : tier.toUpperCase();
-            this.broadcast("serverAnnouncement", {
-                text: `✨ A rare ${tierName} Egg spawned in the world!`,
-                rarity: tier,
-            });
-        }
-    }
-    dropEggOnGround(x, z, tier, dropperId) {
-        const egg = new GameState_1.Egg();
-        egg.id = `dropped_egg_${this.nextEggId++}`;
-        egg.tier = tier;
-        egg.x = x;
-        egg.y = 0;
-        egg.z = z;
-        egg.dropCooldown = config_1.GAME_CONFIG.DROP_COOLDOWN_SEC;
-        egg.lastDroppedBy = dropperId;
-        this.state.mapEggs.set(egg.id, egg);
-    }
-    rollRandomEggTier() {
-        const totalWeight = Object.values(config_1.EGG_TIERS).reduce((acc, t) => acc + t.spawnWeight, 0);
-        let rand = Math.random() * totalWeight;
-        for (const tierObj of Object.values(config_1.EGG_TIERS)) {
-            if (rand < tierObj.spawnWeight) {
-                return tierObj.id;
+        let tier = forcedTier;
+        if (!tier) {
+            const tiers = Object.values(config_1.EGG_TIERS);
+            const totalWeight = tiers.reduce((sum, t) => sum + t.spawnWeight, 0);
+            let rand = Math.random() * totalWeight;
+            for (const t of tiers) {
+                if (rand < t.spawnWeight) {
+                    tier = t.id;
+                    break;
+                }
+                rand -= t.spawnWeight;
             }
-            rand -= tierObj.spawnWeight;
         }
-        return "common";
+        tier = tier || "common";
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * config_1.GAME_CONFIG.SPAWN_RADIUS;
+        this.dropEggOnGround(Math.cos(angle) * dist, Math.sin(angle) * dist, tier);
+    }
+    generatePetForTier(rarity) {
+        const nameList = config_1.PET_NAMES[rarity] || ["Pet"];
+        const baseName = nameList[Math.floor(Math.random() * nameList.length)];
+        const tierConfig = config_1.EGG_TIERS[rarity] || config_1.EGG_TIERS.common;
+        const pet = new GameState_1.Pet();
+        pet.id = `pet_${this.nextPetId++}`;
+        pet.name = baseName;
+        pet.rarity = rarity;
+        const sizeRoll = Math.random();
+        pet.size = sizeRoll < 0.1 ? "giant" : sizeRoll < 0.3 ? "small" : "normal";
+        const mutRoll = Math.random();
+        pet.mutation = mutRoll < 0.03 ? "shiny" : mutRoll < 0.08 ? "rainbow" : mutRoll < 0.18 ? "golden" : "none";
+        const sizeMult = config_1.PET_SIZE_MULTIPLIERS[pet.size] || 1.0;
+        const mutMult = config_1.PET_MUTATION_MULTIPLIERS[pet.mutation] || 1.0;
+        pet.moneyPerSec = Math.floor(10 * tierConfig.moneyMultiplier * sizeMult * mutMult);
+        return pet;
     }
 }
 exports.GameRoom = GameRoom;

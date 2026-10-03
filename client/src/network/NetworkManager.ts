@@ -6,6 +6,7 @@ import {
   TREADMILL_UPGRADES,
   BASE_UPGRADES,
   PET_SLOT_UPGRADES,
+  GAME_CONFIG,
 } from "../config";
 import {
   initBloxity,
@@ -95,12 +96,9 @@ export class NetworkManager {
     this.bloxityLoginBtn = document.getElementById("bloxity-login-btn");
     this.bloxityLogoutBtn = document.getElementById("bloxity-logout-btn");
 
-    // Initialize UI Manager
     this.uiManager = new UIManager();
 
-    // Initialize Bloxity SDK
     initBloxity();
-
     this.setupUIEvents();
     this.setupBloxityEvents();
 
@@ -137,8 +135,10 @@ export class NetworkManager {
     window.addEventListener("keydown", (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      if (e.key === "b" || e.key === "B" || e.key === "e" || e.key === "E") {
+      if (e.key === "b" || e.key === "B") {
         this.toggleShopModal();
+      } else if (e.key === "e" || e.key === "E") {
+        this.interactKey();
       } else if (e.key === "1") {
         this.useBat();
       } else if (e.key === "2") {
@@ -148,6 +148,7 @@ export class NetworkManager {
       } else if (e.key === "v" || e.key === "V") {
         this.sellEgg();
       } else if (e.key === "f" || e.key === "F") {
+        this.placePetAtBase();
         this.fusePets("common");
         this.fusePets("rare");
         this.fusePets("epic");
@@ -260,10 +261,7 @@ export class NetworkManager {
       this.localSessionId = this.room.sessionId;
       this.sceneManager.setLocalAvatarId(this.localSessionId);
 
-      // Send local player's equipped Bloxity cosmetics on room join
       this.sendLocalBloxityCosmetics();
-
-      // Trigger Bloxity SDK Lifecycle hooks
       loadingEnd();
       gameplayStart();
 
@@ -272,13 +270,26 @@ export class NetworkManager {
         this.statusElement.className = "connected";
       }
 
-      // Server Announcement and Special Egg Countdown listeners
       this.room.onMessage("serverAnnouncement", (data: { text: string; rarity?: string }) => {
         this.uiManager.eventFeed.addMessage(data.text, data.rarity || "info");
       });
 
+      this.room.onMessage("redAlert", (data: { count: number; max: number; reason: string }) => {
+        this.uiManager.triggerRedAlertEffect(data.count, data.max, data.reason);
+      });
+
       this.room.onMessage("specialEggCountdown", (data: { timeRemaining: number }) => {
         this.uiManager.updateCountdownTimer(data.timeRemaining);
+      });
+
+      this.room.onMessage("guardRotationCountdown", (data: { timeRemaining: number }) => {
+        this.uiManager.updateGuardRotationTimer(data.timeRemaining);
+      });
+
+      this.room.onMessage("petSoldSuccess", (data: { petName: string; rarity: string; amount: number }) => {
+        this.uiManager.showFloatingCashText(data.amount);
+        this.uiManager.playCashChimeSound();
+        this.uiManager.eventFeed.addMessage(`💰 Sold ${data.petName} (${data.rarity.toUpperCase()}) for +$${data.amount.toLocaleString()}!`, data.rarity || "common");
       });
 
       const updateLocalHUD = (player: Player) => {
@@ -289,11 +300,15 @@ export class NetworkManager {
           this.moneyElement.textContent = `💰 Money: $${Math.floor(player.money || 0).toLocaleString()}`;
         }
         if (this.carriedEggElement) {
+          const carriedPet = (player as any).carriedPet;
           if (player.carriedEggTier && EGG_TIERS[player.carriedEggTier]) {
             const tierConfig = EGG_TIERS[player.carriedEggTier];
             this.carriedEggElement.innerHTML = `🥚 Egg: <span style="color: ${tierConfig.color}; font-weight: 800;">${tierConfig.name}</span>`;
+          } else if (carriedPet) {
+            const tierConfig = EGG_TIERS[carriedPet.rarity] || EGG_TIERS.common;
+            this.carriedEggElement.innerHTML = `🐾 Pet: <span style="color: ${tierConfig.color}; font-weight: 800;">${carriedPet.name}</span>`;
           } else {
-            this.carriedEggElement.textContent = "🥚 Egg: None";
+            this.carriedEggElement.textContent = "🥚 Item: None";
           }
         }
         if (this.incubatorInfoElement) {
@@ -318,7 +333,6 @@ export class NetworkManager {
           }
         }
 
-        // Active Pets Panel Update
         const petsArr = player.pets ? Array.from(player.pets) as unknown as Pet[] : [];
         const maxPetSlots = player.maxPetSlots || 6;
         if (this.petsCountTitleElement) {
@@ -344,7 +358,8 @@ export class NetworkManager {
           }
         }
 
-        // Celebration Modal
+        this.uiManager.updateShopStorageModal(player, (msg, data) => this.room?.send(msg, data));
+
         if (player.lastHatchedReward) {
           try {
             const rewardObj = JSON.parse(player.lastHatchedReward);
@@ -381,10 +396,30 @@ export class NetworkManager {
           this.sceneManager.syncChasingChickens(state.chasingChickens as unknown as Map<string, any>);
         }
 
+        if (state.droppedCoins) {
+          this.sceneManager.petManager.syncCoins(state.droppedCoins as unknown as Map<string, any>);
+        }
+
         this.uiManager.updateDayNightBanner(state.dayNightProgress || 0);
 
         if (state.players) {
           this.sceneManager.syncPets(state.players as unknown as Map<string, any>);
+          this.sceneManager.petManager.syncGroundPets(state.players as unknown as Map<string, any>);
+
+          // Compute Richest Player
+          let maxNetWorth = -1;
+          let richestId = "";
+          state.players.forEach((player: Player, sId: string) => {
+            let petVal = 0;
+            if (player.pets) {
+              player.pets.forEach((p: any) => { petVal += (p.moneyPerSec || 0) * 100; });
+            }
+            const nw = (player.money || 0) + petVal;
+            if (nw > maxNetWorth && nw > 0) {
+              maxNetWorth = nw;
+              richestId = sId;
+            }
+          });
 
           state.players.forEach((player: Player, sessionId: string) => {
             let avatar = this.sceneManager.getAvatar(sessionId);
@@ -393,6 +428,9 @@ export class NetworkManager {
               const playerName = player.name || `Player_${sessionId.slice(0, 4)}`;
               avatar = this.sceneManager.addAvatar(sessionId, playerName, isLocal);
             }
+            const carriedPet = (player as any).carriedPet;
+            const isRichest = sessionId === richestId;
+
             this.sceneManager.updateAvatarState(
               sessionId,
               player.x,
@@ -413,9 +451,18 @@ export class NetworkManager {
               },
               player.trappedTimer
             );
+
+            if (avatar) {
+              avatar.setCarriedItem(player.carriedEggTier || "", carriedPet);
+              avatar.setIsRichest(isRichest);
+              avatar.caughtStunTimer = (player as any).caughtStunTimer || 0;
+              avatar.frozenTimer = (player as any).frozenTimer || 0;
+            }
+
             if (sessionId === this.localSessionId) {
               updateLocalHUD(player);
               this.uiManager.updatePlayerHUD(player, state.players as unknown as Map<string, Player>, this.localSessionId);
+              this.uiManager.updateInteractionPrompt(player, this.getMapEggs());
             }
           });
           this.updatePlayerCount();
@@ -536,12 +583,37 @@ export class NetworkManager {
     }
   }
 
+  public toggleShopStorageModal() {
+    const modal = document.getElementById("shop-storage-modal");
+    if (modal) {
+      modal.classList.toggle("hidden");
+    }
+  }
+
   public dropEgg() {
-    if (this.room) this.room.send("dropEgg");
+    if (!this.room || !this.localSessionId) return;
+    const localPlayer = this.room.state.players.get(this.localSessionId);
+    if (localPlayer && (localPlayer as any).carriedPet) {
+      const stallPos = GAME_CONFIG.MARKET_STALL_POS;
+      const distToStall = Math.hypot(localPlayer.x - stallPos.x, localPlayer.z - stallPos.z);
+      if (distToStall <= GAME_CONFIG.MARKET_STALL_RADIUS) {
+        this.room.send("storePetInShop");
+        return;
+      }
+    }
+    this.room.send("dropEgg");
   }
 
   public sellEgg() {
     if (this.room) this.room.send("sellEgg");
+  }
+
+  public interactKey() {
+    if (this.room) this.room.send("interactKey");
+  }
+
+  public placePetAtBase() {
+    if (this.room) this.room.send("placePetAtBase");
   }
 
   public sellPet(petId: string) {

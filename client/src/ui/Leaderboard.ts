@@ -30,23 +30,36 @@ export class Leaderboard {
   public update(playersMap: Map<string, Player>, localSessionId: string | null) {
     if (!this.listElement) return;
 
-    const players: Array<{ id: string; player: Player; income: number }> = [];
+    const players: Array<{
+      id: string;
+      player: Player;
+      income: number;
+      netWorth: number;
+      stolenTotal: number;
+      hatchedTotal: number;
+    }> = [];
 
     playersMap.forEach((player, id) => {
       let income = 0;
+      let petAssetValue = 0;
       if (player.pets) {
         player.pets.forEach((pet) => {
           income += pet.moneyPerSec || 0;
+          petAssetValue += (pet.moneyPerSec || 0) * 100;
         });
       }
-      players.push({ id, player, income });
+      const netWorth = (player.money || 0) + petAssetValue;
+      const stolenTotal = (player as any).stolenMoneyTotal || 0;
+      const hatchedTotal = (player as any).hatchedEggsTotal || 0;
+
+      players.push({ id, player, income, netWorth, stolenTotal, hatchedTotal });
     });
 
-    // Sort by Money/s descending
-    players.sort((a, b) => b.income - a.income);
+    // Sort by Net Worth descending (or Income)
+    players.sort((a, b) => b.netWorth - a.netWorth);
 
     if (this.countSpanElement) {
-      this.countSpanElement.textContent = `People (${players.length})`;
+      this.countSpanElement.textContent = `Leaderboard (${players.length})`;
     }
 
     this.listElement.innerHTML = "";
@@ -57,14 +70,23 @@ export class Leaderboard {
       row.className = `leaderboard-row ${isLocal ? "local-player" : ""}`;
 
       const displayName = entry.player.name || `Player_${entry.id.slice(0, 4)}`;
-      const speedText = (entry.player.speed || 10).toFixed(1);
-      const incomeText = `$${Math.floor(entry.income)}/s`;
+      const netWorthText = `$${Math.floor(entry.netWorth).toLocaleString()}`;
+      const crownTag = index === 0 && entry.netWorth > 0 ? "👑 " : "";
+
+      const alerts = (entry.player as any).redAlerts || 0;
+      const frozenSecs = (entry.player as any).frozenTimer || 0;
+      let alertTag = "";
+      if (frozenSecs > 0) {
+        alertTag = ` <span style="color: #ef4444; font-weight: bold;" title="FROZEN">🚨❄️</span>`;
+      } else if (alerts > 0) {
+        alertTag = ` <span style="color: #f97316; font-weight: bold;" title="${alerts}/3 Red Alerts">🚨(${alerts})</span>`;
+      }
 
       row.innerHTML = `
         <span class="lb-rank">#${index + 1}</span>
-        <span class="lb-name" title="${displayName}">${displayName}${isLocal ? " (You)" : ""}</span>
-        <span class="lb-income">${incomeText}</span>
-        <span class="lb-speed">⚡${speedText}</span>
+        <span class="lb-name" title="${displayName}">${crownTag}${displayName}${alertTag}${isLocal ? " (You)" : ""}</span>
+        <span class="lb-income" title="Net Worth">${netWorthText}</span>
+        <span class="lb-stats" style="font-size: 11px; opacity: 0.85; margin-left: 6px;">🥷$${entry.stolenTotal} | 🐣${entry.hatchedTotal}</span>
       `;
 
       this.listElement?.appendChild(row);

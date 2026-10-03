@@ -23,14 +23,24 @@ A bright, cartoony Roblox-style 3D real-time multiplayer browser game built with
    - Deposited eggs tick down hatch timers inside incubator nests, spawning 3D blocky pets that generate continuous passive income (`$`/sec).
    - **Pet Fuser Machine**: Stand near your base's 3D Pet Fuser (glowing purple core) and press **F** to combine 3 matching pets into 1 higher-tier pet!
 
-5. **Central 3D Market Stall**:
-   - Walk to the central red/white striped awning Market Stall and press **V** or click Sell to exchange carried eggs and pets directly for cash balance.
+5. **Central 3D Market Stall & Pet Selling**:
+   - Walk to the central red/white striped awning Market Stall and press **E** or click Sell to exchange carried pets and eggs for cash balance based on formula (base price x size mult x mutation mult).
+   - Hatched pets spawn as physical carryable objects at your base. Press **E** to pick them up, then press **F** to place them in base slots for passive income or carry them to the stall to sell!
 
-6. **Combat & Traps (Hotbar Controls)**:
+6. **Red Alert & Freeze System (3-Strike Security Rules)**:
+   - Attempting to grab a guarded egg while a guard animal (Chicken, Dog, Fox) is awake or chasing triggers a **Red Alert** (`redAlerts`: 0 to 3).
+   - **Screen Flash & Web Audio Siren**: Triggers a red screen flash overlay and loud synth siren alert audio chime.
+   - **3rd Alert Penalty Freeze**: Receiving 3 Red Alerts triggers a **3-minute (180s) penalty freeze** (`FREEZE_SECONDS = 180`).
+   - **Dropped Items & Input Lock**: Carrying eggs or pets drop immediately onto the ground for rivals to claim. Movement and all hotbar/interact inputs are strictly rejected.
+   - **Persistent Disconnect Protection**: Active freeze state is tracked by Bloxity ID / session key on the server. Logging out or refreshing does NOT bypass an active freeze!
+   - **Visuals**: Ice-blue avatar texture tint, red 3D overhead `❄️ FROZEN (2:59)` status banner, 3 HUD alert lights (`🔴🔴⚪`), and red siren icons (`🚨`) in the leaderboard.
+   - **120s Cooldown Reset**: Going 120s without a new alert resets the warning count to 0.
+
+7. **Combat & Traps (Hotbar Controls)**:
    - **Wooden Bat (Key 1)**: Swing wooden bat (`useBat`) to strike nearby opponents, forcing them to drop their carried egg and knocking them backward.
    - **Bear Traps (Key 2)**: Place invisible traps (`placeTrap`). Opponents stepping on them are stunned for 7 seconds with a prominent overhead `🚨 TRAPPED (7.0s)` status banner.
 
-7. **Bouncing Red Arrow Guide Trail**:
+8. **Bouncing Red Arrow Guide Trail**:
    - Dynamic 3D bouncing red arrows path on the ground pointing to your base incubator (when carrying an egg), base treadmill (when new), or nearest map egg.
 
 ---
@@ -80,23 +90,62 @@ cd client && npm run build
 
 ---
 
-## 🧪 Manual Testing Instructions (Two Tabs)
+## 🛠️ Modified Files Summary
 
-1. Run `npm run dev`.
-2. Open **Tab 1** (`http://localhost:5173`).
-3. Open **Tab 2** (`http://localhost:5173`).
-4. **Test Real-Time Multiplayer Sync**:
-   - Use `WASD` or `Arrow Keys` in Tab 1—avatar movement & rotation update synchronously in Tab 2.
-5. **Test Egg Carrying & Stealing**:
-   - Pick up wild eggs from map center.
-   - Deposit in your base incubator or steal from Tab 2's base nest.
-   - Collide Tab 1 avatar into Tab 2 avatar while carrying an egg to drop it onto the ground.
-6. **Test Incubators & Pets**:
-   - Wait for incubator egg countdown to finish.
-   - Observe 3D pet spawn and money continuously increment in the HUD.
-7. **Test Shop Upgrades**:
-   - Press **B** to open the Shop.
-   - Purchase treadmill upgrades or base expansion to observe real-time 3D model changes!
+- `server/src/rooms/GameRoom.ts`: Strict interaction freeze check, zeroed player movement inputs in `freezePlayer`, test-mode debug trigger endpoints, `shopPets` storage logic, double-click sell lock.
+- `server/src/rooms/schema/GameState.ts`: Added `@type([Pet]) shopPets` ArraySchema field to `Player`.
+- `server/src/config.ts`: Externalized sell base prices, size/mutation multipliers, red alert/freeze parameters, and shop stall radius.
+- `server/test/freeze.test.ts`: Automated test suite covering Red Alert incrementing, freeze movement locking, interaction rejection, and 3-second expiration.
+- `client/src/network/schema/GameState.ts`: Added `@type([Pet]) shopPets` ArraySchema field on client schema.
+- `client/src/ui/UIManager.ts`: Added `showFloatingCashText`, `playCashChimeSound`, `updateShopStorageModal`, red alert lights HUD display, and context-sensitive `updateInteractionPrompt`.
+- `client/src/network/NetworkManager.ts`: Wired `"petSoldSuccess"`, `storePetInShop`, `sellShopPet`, `keepShopPet`, and automatic shop storage modal sync.
+- `client/index.html`: Added `#shop-storage-modal` overlay container.
+- `client/src/style.css`: Added cartoony Roblox styling for shop storage panel, sell/keep buttons, and floating cash text animation.
+
+---
+
+## 🧪 Manual Testing Instructions (Two Windows)
+
+### Part 1: Automated Freeze Test Suite
+Run the automated test suite to verify the Red Alert & Freeze System:
+```bash
+npm run test:freeze
+```
+*Output*: 4 automated passes verifying alert increments, movement lock during freeze, interaction rejection, and full movement recovery upon expiration (`Exit code: 0`).
+
+---
+
+### Part 2: Two-Window Manual Game Flow Test
+
+1. **Launch Dev Environment**:
+   Run `npm run dev` from root directory.
+
+2. **Open Two Browser Windows**:
+   - **Window 1**: `http://localhost:5173` (Player 1)
+   - **Window 2**: `http://localhost:5173` (Player 2)
+
+3. **Testing Fix 1 (Red Alert Siren & 3-Strike Freeze System)**:
+   - In **Window 1**, walk to a guarded egg on the map.
+   - Press **E** while the guard animal is awake/chasing to attempt pickup.
+   - **Observe**: Screen flashes red, siren chime sounds, and HUD displays `🚨 Alerts: 🔴⚪⚪` (1/3).
+   - Repeat 2 more times to reach **3 Red Alerts**.
+   - **Verify**:
+     - Player becomes **FROZEN** with a red status banner `❄️ FROZEN (3:00)`.
+     - In **Window 2**, Player 1's avatar tints **ice-blue** and shows overhead `❄️ FROZEN (3:00)`.
+     - Try moving (`WASD`) or interacting (`E`/`G`/`1`/`2`) in **Window 1**—all inputs are strictly locked on the server.
+     - Wait for freeze expiration (3:00)—player unfreezes, alerts reset to 0, and normal movement resumes.
+
+4. **Testing Fix 2 (Pet Carrying, Shop Storage, Selling & Keeping)**:
+   - In **Window 1**, carry a map egg to your base incubator nest and press **G** to place it.
+   - Wait for the incubator hatch timer to expire.
+   - **Observe**: When the egg hatches, a carryable 3D pet appears on the ground next to your incubator (NOT directly into passive income).
+   - Walk near the pet—prompt shows `"Press E to carry [Pet Name]"`. Press **E** to pick it up.
+   - Walk to the central Market Stall (striped awning at map origin).
+   - Prompt updates to `"Press G to store pet in shop"`. Press **G**.
+   - **Observe**: Pet transfers into **Shop Storage** and the glossy **Shop Storage Modal** opens.
+   - In the Shop Panel:
+     - **Choice A (Sell)**: Click **SELL ($X)**. Observe 1-second sell animation ("SELLING..."), double-click lock protection, floating `+$X` cash text, Web Audio chime sound, and server event feed announcement!
+     - **Choice B (Keep)**: Store another pet and click **KEEP (Income)**. Observe pet moves into your base active pet slot and earns continuous passive `$`/sec!
 
 ---
 

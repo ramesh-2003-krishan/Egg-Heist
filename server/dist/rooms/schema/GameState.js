@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GameState = exports.Player = exports.ChasingChicken = exports.Trap = exports.Egg = exports.Pet = void 0;
+exports.GameState = exports.Player = exports.DroppedCoin = exports.ChasingChicken = exports.Trap = exports.Egg = exports.Pet = void 0;
 const schema_1 = require("@colyseus/schema");
 class Pet extends schema_1.Schema {
     constructor() {
@@ -20,6 +20,12 @@ class Pet extends schema_1.Schema {
         this.size = "normal";
         this.mutation = "none";
         this.moneyPerSec = 1.0;
+        this.x = 0;
+        this.y = 0;
+        this.z = 0;
+        this.carriedBy = "";
+        this.baseIndex = -1;
+        this.isGroundPet = false;
     }
 }
 exports.Pet = Pet;
@@ -47,6 +53,30 @@ __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
 ], Pet.prototype, "moneyPerSec", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Pet.prototype, "x", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Pet.prototype, "y", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Pet.prototype, "z", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Pet.prototype, "carriedBy", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Pet.prototype, "baseIndex", void 0);
+__decorate([
+    (0, schema_1.type)("boolean"),
+    __metadata("design:type", Boolean)
+], Pet.prototype, "isGroundPet", void 0);
 class Egg extends schema_1.Schema {
     constructor() {
         super(...arguments);
@@ -61,6 +91,12 @@ class Egg extends schema_1.Schema {
         this.dropCooldown = 0;
         this.lastDroppedBy = "";
         this.hasChicken = false;
+        this.isGuarded = false;
+        this.guardType = "chicken";
+        this.guardX = 0;
+        this.guardZ = 0;
+        this.guardState = "sleeping";
+        this.guardTargetId = "";
     }
 }
 exports.Egg = Egg;
@@ -108,6 +144,30 @@ __decorate([
     (0, schema_1.type)("boolean"),
     __metadata("design:type", Boolean)
 ], Egg.prototype, "hasChicken", void 0);
+__decorate([
+    (0, schema_1.type)("boolean"),
+    __metadata("design:type", Boolean)
+], Egg.prototype, "isGuarded", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Egg.prototype, "guardType", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Egg.prototype, "guardX", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Egg.prototype, "guardZ", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Egg.prototype, "guardState", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Egg.prototype, "guardTargetId", void 0);
 class Trap extends schema_1.Schema {
     constructor() {
         super(...arguments);
@@ -175,6 +235,42 @@ __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
 ], ChasingChicken.prototype, "lifetime", void 0);
+class DroppedCoin extends schema_1.Schema {
+    constructor() {
+        super(...arguments);
+        this.id = "";
+        this.x = 0;
+        this.y = 0;
+        this.z = 0;
+        this.amount = 0;
+        this.despawnTimer = 8.0;
+    }
+}
+exports.DroppedCoin = DroppedCoin;
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], DroppedCoin.prototype, "id", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], DroppedCoin.prototype, "x", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], DroppedCoin.prototype, "y", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], DroppedCoin.prototype, "z", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], DroppedCoin.prototype, "amount", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], DroppedCoin.prototype, "despawnTimer", void 0);
 class Player extends schema_1.Schema {
     constructor() {
         super(...arguments);
@@ -191,12 +287,18 @@ class Player extends schema_1.Schema {
         this.speedStat = 1;
         this.carriedEggTier = "";
         this.carriedEgg = null;
+        this.carriedPet = null;
         this.incubatorEggs = new schema_1.ArraySchema();
         this.pets = new schema_1.ArraySchema();
-        // Mechanics Fields
+        this.groundPets = new schema_1.ArraySchema();
+        // Mechanics & Competitive Fields
         this.batCooldown = 0;
         this.trapCount = 3;
         this.trappedTimer = 0;
+        this.stolenMoneyTotal = 0;
+        this.hatchedEggsTotal = 0;
+        this.caughtStunTimer = 0;
+        this.invulnerableTimer = 0;
         // Shop Upgrades
         this.treadmillTier = 1;
         this.baseTier = 1;
@@ -207,6 +309,12 @@ class Player extends schema_1.Schema {
         this.hasAngelicTreadmill = false;
         this.equippedAngelicTreadmill = false;
         this.lastHatchedReward = "";
+        // Red Alert & Freeze System
+        this.redAlerts = 0;
+        this.frozenTimer = 0;
+        this.freezeEndTime = 0;
+        this.lastAlertTime = 0;
+        this.lastInteractTime = 0;
         // Bloxity SDK Equipped Cosmetics
         this.skinId = "";
         this.hatId = "";
@@ -270,6 +378,10 @@ __decorate([
     __metadata("design:type", Object)
 ], Player.prototype, "carriedEgg", void 0);
 __decorate([
+    (0, schema_1.type)(Pet),
+    __metadata("design:type", Object)
+], Player.prototype, "carriedPet", void 0);
+__decorate([
     (0, schema_1.type)([Egg]),
     __metadata("design:type", Object)
 ], Player.prototype, "incubatorEggs", void 0);
@@ -277,6 +389,10 @@ __decorate([
     (0, schema_1.type)([Pet]),
     __metadata("design:type", Object)
 ], Player.prototype, "pets", void 0);
+__decorate([
+    (0, schema_1.type)([Pet]),
+    __metadata("design:type", Object)
+], Player.prototype, "groundPets", void 0);
 __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
@@ -289,6 +405,22 @@ __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
 ], Player.prototype, "trappedTimer", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "stolenMoneyTotal", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "hatchedEggsTotal", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "caughtStunTimer", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "invulnerableTimer", void 0);
 __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
@@ -322,6 +454,22 @@ __decorate([
     __metadata("design:type", String)
 ], Player.prototype, "lastHatchedReward", void 0);
 __decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "redAlerts", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "frozenTimer", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "freezeEndTime", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], Player.prototype, "lastAlertTime", void 0);
+__decorate([
     (0, schema_1.type)("string"),
     __metadata("design:type", String)
 ], Player.prototype, "skinId", void 0);
@@ -352,7 +500,9 @@ class GameState extends schema_1.Schema {
         this.mapEggs = new schema_1.MapSchema();
         this.placedTraps = new schema_1.MapSchema();
         this.chasingChickens = new schema_1.MapSchema();
+        this.droppedCoins = new schema_1.MapSchema();
         this.dayNightProgress = 0;
+        this.richestPlayerId = "";
     }
 }
 exports.GameState = GameState;
@@ -373,6 +523,14 @@ __decorate([
     __metadata("design:type", Object)
 ], GameState.prototype, "chasingChickens", void 0);
 __decorate([
+    (0, schema_1.type)({ map: DroppedCoin }),
+    __metadata("design:type", Object)
+], GameState.prototype, "droppedCoins", void 0);
+__decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)
 ], GameState.prototype, "dayNightProgress", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], GameState.prototype, "richestPlayerId", void 0);

@@ -7,6 +7,12 @@ export class Pet extends Schema {
   @type("string") size: string = "normal";
   @type("string") mutation: string = "none";
   @type("number") moneyPerSec: number = 1.0;
+  @type("number") x: number = 0;
+  @type("number") y: number = 0;
+  @type("number") z: number = 0;
+  @type("string") carriedBy: string = "";
+  @type("number") baseIndex: number = -1;
+  @type("boolean") isGroundPet: boolean = false;
 }
 
 export class Egg extends Schema {
@@ -21,6 +27,12 @@ export class Egg extends Schema {
   @type("number") dropCooldown: number = 0;
   @type("string") lastDroppedBy: string = "";
   @type("boolean") hasChicken: boolean = false;
+  @type("boolean") isGuarded: boolean = false;
+  @type("string") guardType: string = "chicken";
+  @type("number") guardX: number = 0;
+  @type("number") guardZ: number = 0;
+  @type("string") guardState: string = "sleeping";
+  @type("string") guardTargetId: string = "";
 }
 
 export class Trap extends Schema {
@@ -40,6 +52,15 @@ export class ChasingChicken extends Schema {
   @type("number") lifetime: number = 4.0;
 }
 
+export class DroppedCoin extends Schema {
+  @type("string") id: string = "";
+  @type("number") x: number = 0;
+  @type("number") y: number = 0;
+  @type("number") z: number = 0;
+  @type("number") amount: number = 0;
+  @type("number") despawnTimer: number = 8.0;
+}
+
 export class Player extends Schema {
   @type("string") id: string = "";
   @type("string") name: string = "";
@@ -54,13 +75,20 @@ export class Player extends Schema {
   @type("number") speedStat: number = 1;
   @type("string") carriedEggTier: string = "";
   @type(Egg) carriedEgg: Egg | null = null;
+  @type(Pet) carriedPet: Pet | null = null;
   @type([Egg]) incubatorEggs = new ArraySchema<Egg>();
   @type([Pet]) pets = new ArraySchema<Pet>();
+  @type([Pet]) groundPets = new ArraySchema<Pet>();
+  @type([Pet]) shopPets = new ArraySchema<Pet>();
 
-  // Mechanics Fields
+  // Mechanics & Competitive Fields
   @type("number") batCooldown: number = 0;
   @type("number") trapCount: number = 3;
   @type("number") trappedTimer: number = 0;
+  @type("number") stolenMoneyTotal: number = 0;
+  @type("number") hatchedEggsTotal: number = 0;
+  @type("number") caughtStunTimer: number = 0;
+  @type("number") invulnerableTimer: number = 0;
 
   // Shop Upgrades
   @type("number") treadmillTier: number = 1;
@@ -73,6 +101,13 @@ export class Player extends Schema {
   @type("boolean") hasAngelicTreadmill: boolean = false;
   @type("boolean") equippedAngelicTreadmill: boolean = false;
   @type("string") lastHatchedReward: string = "";
+
+  // Red Alert & Freeze System
+  @type("number") redAlerts: number = 0;
+  @type("number") frozenTimer: number = 0;
+  @type("number") freezeEndTime: number = 0;
+  @type("number") lastAlertTime: number = 0;
+  public lastInteractTime: number = 0;
 
   // Bloxity SDK Equipped Cosmetics
   @type("string") skinId: string = "";
@@ -88,5 +123,7 @@ export class GameState extends Schema {
   @type({ map: Egg }) mapEggs = new MapSchema<Egg>();
   @type({ map: Trap }) placedTraps = new MapSchema<Trap>();
   @type({ map: ChasingChicken }) chasingChickens = new MapSchema<ChasingChicken>();
+  @type({ map: DroppedCoin }) droppedCoins = new MapSchema<DroppedCoin>();
   @type("number") dayNightProgress: number = 0;
+  @type("string") richestPlayerId: string = "";
 }

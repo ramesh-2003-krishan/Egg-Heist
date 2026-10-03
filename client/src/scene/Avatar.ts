@@ -5,17 +5,12 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { EGG_TIERS } from "../config";
 import { BLOXITY_STATIC_CDN, getSkinTextureUrl, getUser } from "../bloxity";
 
-// Module-level GLB cache to prevent duplicate fetch requests across avatars
 let cachedGlbScene: THREE.Object3D | null = null;
 let glbLoadPromise: Promise<THREE.Object3D> | null = null;
 
 function getOrLoadPlayerGlb(loader: GLTFLoader): Promise<THREE.Object3D> {
-  if (cachedGlbScene) {
-    return Promise.resolve(cachedGlbScene);
-  }
-  if (glbLoadPromise) {
-    return glbLoadPromise;
-  }
+  if (cachedGlbScene) return Promise.resolve(cachedGlbScene);
+  if (glbLoadPromise) return glbLoadPromise;
 
   const playerGlbUrl = `${BLOXITY_STATIC_CDN}/player.glb`;
   glbLoadPromise = new Promise((resolve, reject) => {
@@ -42,7 +37,9 @@ export class Avatar {
   public speed: number = 10;
   public speedStat: number = 1;
   public carriedEggTier: string = "";
+  public carriedPetData: any = null;
   public equippedDivineTrail: boolean = false;
+  public isRichest: boolean = false;
 
   // Bloxity Cosmetic Fields
   public skinId: string = "";
@@ -53,7 +50,7 @@ export class Avatar {
   public pantsId: string = "";
   public maskId: string = "";
 
-  // Mesh & Skeleton Containers
+  // Container References
   private boxAvatarGroup: THREE.Group;
   private playerGlbScene: THREE.Group | null = null;
   private neck1Bone: THREE.Object3D | null = null;
@@ -65,8 +62,11 @@ export class Avatar {
   private rightArm: THREE.Mesh;
   private leftLeg: THREE.Mesh;
   private rightLeg: THREE.Mesh;
-  private carriedEggGroup: THREE.Group | null = null;
+
+  private carriedItemGroup: THREE.Group | null = null;
   private nameSprite: THREE.Sprite | null = null;
+  private crownGroup: THREE.Group | null = null;
+  private carrierTagSprite: THREE.Sprite | null = null;
   private nameString: string = "";
 
   private trailParticles: THREE.Points | null = null;
@@ -88,6 +88,9 @@ export class Avatar {
   private isMoving: boolean = false;
   private currentSkinTexture: THREE.Texture | null = null;
 
+  public trappedTimer: number = 0;
+  public caughtStunTimer: number = 0;
+
   constructor(id: string, name: string, isLocal: boolean = false, skinColorHex: number = 0x3b82f6) {
     this.id = id;
     this.isLocal = isLocal;
@@ -98,7 +101,6 @@ export class Avatar {
     this.gltfLoader = new GLTFLoader();
     this.textureLoader = new THREE.TextureLoader();
 
-    // Box-based Fallback Avatar Container
     this.boxAvatarGroup = new THREE.Group();
     this.group.add(this.boxAvatarGroup);
 
@@ -111,7 +113,6 @@ export class Avatar {
     const pantsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.5 });
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
 
-    // Torso
     const torsoGeo = new THREE.BoxGeometry(0.9, 1.1, 0.5);
     this.torso = new THREE.Mesh(torsoGeo, shirtMat);
     this.torso.position.y = 1.15;
@@ -119,14 +120,12 @@ export class Avatar {
     this.torso.receiveShadow = true;
     this.boxAvatarGroup.add(this.torso);
 
-    // Head
     const headGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7);
     this.head = new THREE.Mesh(headGeo, skinMat);
     this.head.position.y = 0.9;
     this.head.castShadow = true;
     this.torso.add(this.head);
 
-    // Eyes
     const eyeGeo = new THREE.BoxGeometry(0.12, 0.12, 0.05);
     const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
     leftEye.position.set(-0.18, 0.08, 0.36);
@@ -134,7 +133,6 @@ export class Avatar {
     rightEye.position.set(0.18, 0.08, 0.36);
     this.head.add(leftEye, rightEye);
 
-    // Arms & Legs
     const armGeo = new THREE.BoxGeometry(0.38, 1.0, 0.38);
     armGeo.translate(0, -0.4, 0);
     this.leftArm = new THREE.Mesh(armGeo, skinMat);
@@ -159,10 +157,9 @@ export class Avatar {
     this.rightLeg.castShadow = true;
     this.torso.add(this.rightLeg);
 
-    // Floating Name Tag
     this.updateNameTag();
 
-    // Divine Rainbow Particle Trail Buffer
+    // Trail Particles
     const count = 40;
     this.trailPositions = new Float32Array(count * 3);
     this.trailColors = new Float32Array(count * 3);
@@ -179,21 +176,17 @@ export class Avatar {
     this.trailParticles = new THREE.Points(trailGeo, trailMat);
 
     this.targetPosition = new THREE.Vector3();
-
-    // Load Bloxity player.glb Character Mesh
     this.loadBloxityPlayerGlb();
   }
 
   private loadBloxityPlayerGlb() {
     getOrLoadPlayerGlb(this.gltfLoader)
       .then((baseScene) => {
-        // Clone model per player using SkeletonUtils.clone so skinned meshes work correctly
         const clonedScene = SkeletonUtils.clone(baseScene) as THREE.Group;
         this.playerGlbScene = clonedScene;
         this.playerGlbScene.scale.set(1.1, 1.1, 1.1);
         this.playerGlbScene.position.set(0, 0, 0);
 
-        // Find Neck1 bone and setup shadows
         this.neck1Bone = null;
         this.playerGlbScene.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
@@ -212,15 +205,8 @@ export class Avatar {
         this.isGlbLoaded = true;
 
         const isGuest = this.checkIsGuest();
-        if (isGuest) {
-          this.boxAvatarGroup.visible = true;
-          this.playerGlbScene.visible = false;
-        } else {
-          this.boxAvatarGroup.visible = false;
-          this.playerGlbScene.visible = true;
-        }
-
-        console.log(`✅ [Bloxity] Successfully attached player.glb model (ID: ${this.id}, Guest: ${isGuest})`);
+        this.boxAvatarGroup.visible = isGuest;
+        this.playerGlbScene.visible = !isGuest;
 
         if (this.currentSkinTexture) {
           this.applyTextureToGlb(this.currentSkinTexture);
@@ -253,17 +239,8 @@ export class Avatar {
     return !hasAnyCosmetic;
   }
 
-  public setBloxityCosmetics(cosmetics: {
-    skinId?: string;
-    hatId?: string;
-    hairId?: string;
-    faceId?: string;
-    shirtId?: string;
-    pantsId?: string;
-    maskId?: string;
-  }) {
+  public setBloxityCosmetics(cosmetics: any) {
     let changed = false;
-
     if (cosmetics.skinId !== undefined && cosmetics.skinId !== this.skinId) {
       this.skinId = cosmetics.skinId;
       changed = true;
@@ -288,10 +265,6 @@ export class Avatar {
       this.pantsId = cosmetics.pantsId;
       changed = true;
     }
-    if (cosmetics.maskId !== undefined && cosmetics.maskId !== this.maskId) {
-      this.maskId = cosmetics.maskId;
-      changed = true;
-    }
 
     if (this.isGlbLoaded && this.playerGlbScene) {
       const isGuest = this.checkIsGuest();
@@ -307,67 +280,36 @@ export class Avatar {
     }
   }
 
-  private getRemoteSkinTextureUrl(): string {
-    const isValid = (id?: string) =>
-      Boolean(id && id !== "-1" && id !== "undefined" && id !== "null" && id.trim() !== "");
-
-    const sId = isValid(this.skinId) ? this.skinId : "0";
-    const queryParts: string[] = [];
-    if (isValid(this.pantsId)) queryParts.push(`_pn${this.pantsId}`);
-    if (isValid(this.shirtId)) queryParts.push(`_sh${this.shirtId}`);
-    if (isValid(this.faceId)) queryParts.push(`_fc${this.faceId}`);
-
-    return `https://api.bloxity.io/v1/avatar/skin-texture/s${sId}${queryParts.join("")}.png`;
-  }
-
   public applyBloxitySkinTexture() {
-    let textureUrl = "";
-    if (this.isLocal) {
-      textureUrl = getSkinTextureUrl() || "";
-    }
-
+    let textureUrl = this.isLocal ? getSkinTextureUrl() || "" : "";
     if (!textureUrl) {
-      textureUrl = this.getRemoteSkinTextureUrl();
+      const sId = this.skinId && this.skinId !== "-1" ? this.skinId : "0";
+      textureUrl = `https://api.bloxity.io/v1/avatar/skin-texture/s${sId}.png`;
     }
 
-    if (textureUrl) {
-      this.textureLoader.load(
-        textureUrl,
-        (texture) => {
-          texture.colorSpace = THREE.SRGBColorSpace;
-          this.currentSkinTexture = texture;
+    this.textureLoader.load(
+      textureUrl,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.currentSkinTexture = texture;
+        const customMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.3 });
+        this.torso.material = customMat;
+        this.head.material = customMat;
 
-          // Apply to Box Fallback Avatar
-          const customMat = new THREE.MeshStandardMaterial({
-            map: texture,
-            roughness: 0.3,
-          });
-          this.torso.material = customMat;
-          this.head.material = customMat;
-
-          // Apply to GLTF player.glb Avatar
-          if (this.playerGlbScene) {
-            this.applyTextureToGlb(texture);
-          }
-        },
-        undefined,
-        (err) => {
-          console.warn("⚠️ [Bloxity] Failed to load skin texture, keeping default look:", err);
-        }
-      );
-    }
+        if (this.playerGlbScene) this.applyTextureToGlb(texture);
+      },
+      undefined,
+      (err) => {
+        console.warn("⚠️ [Bloxity] Default skin fallback applied:", err);
+      }
+    );
   }
 
   private applyTextureToGlb(texture: THREE.Texture) {
     if (!this.playerGlbScene) return;
-
     this.playerGlbScene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        mesh.material = new THREE.MeshStandardMaterial({
-          map: texture,
-          roughness: 0.3,
-        });
+        (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.3 });
       }
     });
   }
@@ -375,10 +317,9 @@ export class Avatar {
   private applyBloxityAccessories() {
     this.loadAndAttachAccessory(this.hatId, "hat");
     this.loadAndAttachAccessory(this.hairId, "hair");
-    this.loadAndAttachAccessory(this.maskId, "mask");
   }
 
-  private loadAndAttachAccessory(id: string, slot: "hat" | "hair" | "mask") {
+  private loadAndAttachAccessory(id: string, slot: "hat" | "hair") {
     const parentContainer =
       this.neck1Bone || (this.isGlbLoaded && this.playerGlbScene ? this.playerGlbScene : this.head);
 
@@ -388,61 +329,31 @@ export class Avatar {
     } else if (slot === "hair" && this.hairMesh) {
       parentContainer.remove(this.hairMesh);
       this.hairMesh = null;
-    } else if (slot === "mask" && this.maskMesh) {
-      parentContainer.remove(this.maskMesh);
-      this.maskMesh = null;
     }
 
-    const isValidId = Boolean(
-      id && id !== "-1" && id !== "undefined" && id !== "null" && id.trim() !== ""
-    );
-
-    if (!isValidId) return;
+    if (!id || id === "-1" || id.trim() === "") return;
 
     const objUrl = `${BLOXITY_STATIC_CDN}/items/hats/${id}.obj`;
     const texUrl = `${BLOXITY_STATIC_CDN}/textures/hats/${id}.png`;
 
-    this.textureLoader.load(
-      texUrl,
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        const hatMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
-
-        this.objLoader.load(
-          objUrl,
-          (obj) => {
-            obj.traverse((child) => {
-              if ((child as THREE.Mesh).isMesh) {
-                (child as THREE.Mesh).material = hatMat;
-                child.castShadow = true;
-              }
-            });
-            obj.position.set(0, 0.8, 0);
-            obj.scale.set(0.25, 0.25, 0.25);
-
-            if (slot === "hat") this.hatMesh = obj;
-            else if (slot === "hair") this.hairMesh = obj;
-            else if (slot === "mask") this.maskMesh = obj;
-
-            parentContainer.add(obj);
-          },
-          undefined,
-          (err) => {
-            console.warn(`⚠️ [Bloxity] Failed to load ${slot} OBJ model (${id}):`, err);
-          }
-        );
-      },
-      undefined,
-      (err) => {
-        console.warn(`⚠️ [Bloxity] Failed to load ${slot} texture (${id}):`, err);
-      }
-    );
+    this.textureLoader.load(texUrl, (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
+      this.objLoader.load(objUrl, (obj) => {
+        obj.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) (child as THREE.Mesh).material = mat;
+        });
+        obj.position.set(0, 0.8, 0);
+        obj.scale.set(0.25, 0.25, 0.25);
+        if (slot === "hat") this.hatMesh = obj;
+        else if (slot === "hair") this.hairMesh = obj;
+        parentContainer.add(obj);
+      });
+    });
   }
 
   public setEquippedDivineTrail(equipped: boolean) {
-    if (this.equippedDivineTrail === equipped) return;
     this.equippedDivineTrail = equipped;
-
     if (equipped && this.trailParticles && !this.group.children.includes(this.trailParticles)) {
       this.group.add(this.trailParticles);
     } else if (!equipped && this.trailParticles && this.group.children.includes(this.trailParticles)) {
@@ -450,37 +361,120 @@ export class Avatar {
     }
   }
 
-  public setCarriedEgg(tier: string) {
-    if (this.carriedEggTier === tier) return;
-    this.carriedEggTier = tier;
+  // --- Carried Item (Egg or Pet) Visualization ---
+  public setCarriedItem(eggTier: string, petData: any = null) {
+    this.carriedEggTier = eggTier || "";
+    this.carriedPetData = petData;
 
-    if (this.carriedEggGroup) {
-      this.group.remove(this.carriedEggGroup);
-      this.carriedEggGroup = null;
+    if (this.carriedItemGroup) {
+      this.group.remove(this.carriedItemGroup);
+      this.carriedItemGroup = null;
     }
 
-    if (tier && EGG_TIERS[tier]) {
-      this.carriedEggGroup = new THREE.Group();
+    if (eggTier && EGG_TIERS[eggTier]) {
+      this.carriedItemGroup = new THREE.Group();
       const sphereGeo = new THREE.SphereGeometry(0.38, 20, 20);
       sphereGeo.scale(1, 1.35, 1);
-
       const mat = new THREE.MeshStandardMaterial({
-        color: EGG_TIERS[tier].colorHex,
+        color: EGG_TIERS[eggTier].colorHex,
         roughness: 0.3,
         metalness: 0.2,
       });
-
       const eggMesh = new THREE.Mesh(sphereGeo, mat);
       eggMesh.castShadow = true;
-      this.carriedEggGroup.add(eggMesh);
-
-      this.carriedEggGroup.position.set(0, 1.25, 0.55);
-      this.group.add(this.carriedEggGroup);
+      this.carriedItemGroup.add(eggMesh);
+      this.carriedItemGroup.position.set(0, 1.25, 0.55);
+      this.group.add(this.carriedItemGroup);
 
       this.leftArm.rotation.x = -Math.PI / 3;
       this.rightArm.rotation.x = -Math.PI / 3;
-      this.leftArm.rotation.z = Math.PI / 12;
-      this.rightArm.rotation.z = -Math.PI / 12;
+    } else if (petData) {
+      this.carriedItemGroup = new THREE.Group();
+      const bodyGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+      const mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.3 });
+      const petMesh = new THREE.Mesh(bodyGeo, mat);
+      petMesh.castShadow = true;
+      this.carriedItemGroup.add(petMesh);
+      this.carriedItemGroup.position.set(0, 1.25, 0.55);
+      this.group.add(this.carriedItemGroup);
+
+      this.leftArm.rotation.x = -Math.PI / 3;
+      this.rightArm.rotation.x = -Math.PI / 3;
+    } else {
+      this.leftArm.rotation.x = 0;
+      this.rightArm.rotation.x = 0;
+    }
+
+    this.updateCarrierTargetTag();
+  }
+
+  // --- Richest Player Floating Golden Crown ---
+  public setIsRichest(isRichest: boolean) {
+    if (this.isRichest === isRichest) return;
+    this.isRichest = isRichest;
+
+    if (this.crownGroup) {
+      this.group.remove(this.crownGroup);
+      this.crownGroup = null;
+    }
+
+    if (isRichest) {
+      this.crownGroup = new THREE.Group();
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.2, metalness: 0.85 });
+
+      const ringGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.15, 8);
+      const ring = new THREE.Mesh(ringGeo, goldMat);
+      this.crownGroup.add(ring);
+
+      for (let i = 0; i < 5; i++) {
+        const pointGeo = new THREE.ConeGeometry(0.08, 0.25, 4);
+        const point = new THREE.Mesh(pointGeo, goldMat);
+        const angle = (i / 5) * Math.PI * 2;
+        point.position.set(Math.cos(angle) * 0.3, 0.18, Math.sin(angle) * 0.3);
+        this.crownGroup.add(point);
+      }
+
+      this.crownGroup.position.set(0, 3.7, 0);
+      this.group.add(this.crownGroup);
+    }
+  }
+
+  // --- Red Carrier Overhead Target Tag ---
+  public updateCarrierTargetTag() {
+    if (this.carrierTagSprite) {
+      this.group.remove(this.carrierTagSprite);
+      this.carrierTagSprite = null;
+    }
+
+    let highlightText = "";
+    if (this.carriedEggTier && ["rare", "epic", "secret", "eternal", "divine"].includes(this.carriedEggTier)) {
+      highlightText = `🚨 ${this.nameString} is carrying a ${this.carriedEggTier.toUpperCase()} egg!`;
+    } else if (this.carriedPetData) {
+      highlightText = `🚨 ${this.nameString} is carrying a ${this.carriedPetData.rarity.toUpperCase()} pet!`;
+    }
+
+    if (highlightText) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 380;
+      canvas.height = 70;
+      const ctx = canvas.getContext("2d")!;
+
+      ctx.fillStyle = "rgba(220, 38, 38, 0.95)";
+      ctx.roundRect(8, 8, 364, 54, 12);
+      ctx.fill();
+
+      ctx.font = "Bold 20px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(highlightText, 190, 35);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      this.carrierTagSprite = new THREE.Sprite(spriteMat);
+      this.carrierTagSprite.scale.set(3.8, 0.7, 1);
+      this.carrierTagSprite.position.set(0, 4.3, 0);
+      this.group.add(this.carrierTagSprite);
     }
   }
 
@@ -507,95 +501,86 @@ export class Avatar {
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
     this.group.rotation.y += diff * 0.25;
 
-    // Divine Rainbow Particle Trail Update
-    if (this.equippedDivineTrail && this.trailParticles) {
-      const positions = this.trailParticles.geometry.attributes.position.array as Float32Array;
-      const colors = this.trailParticles.geometry.attributes.color.array as Float32Array;
-
-      if (this.isMoving) {
-        this.particleIndex = (this.particleIndex + 1) % 40;
-        const idx = this.particleIndex * 3;
-        positions[idx] = (Math.random() - 0.5) * 0.6;
-        positions[idx + 1] = 0.2 + Math.random() * 0.8;
-        positions[idx + 2] = -0.6 - Math.random() * 0.6;
-
-        const hue = (Date.now() % 2000) / 2000;
-        const color = new THREE.Color().setHSL(hue, 1.0, 0.5);
-        colors[idx] = color.r;
-        colors[idx + 1] = color.g;
-        colors[idx + 2] = color.b;
-
-        this.trailParticles.geometry.attributes.position.needsUpdate = true;
-        this.trailParticles.geometry.attributes.color.needsUpdate = true;
-      }
+    // Crown rotation animation
+    if (this.crownGroup) {
+      this.crownGroup.rotation.y += dt * 1.5;
     }
 
-    // Walking Animation Update (Procedural movement & character tilt)
-    if (this.isMoving) {
+    // Walking animation
+    if (this.isMoving && this.caughtStunTimer <= 0) {
       const animSpeed = 10 * (this.speed / 10);
       this.animTimer += dt * Math.min(30, animSpeed);
       const angle = Math.sin(this.animTimer) * 0.6;
 
-      if (!this.carriedEggTier) {
+      if (!this.carriedEggTier && !this.carriedPetData) {
         this.leftArm.rotation.x = angle;
         this.rightArm.rotation.x = -angle;
-      } else {
-        this.leftArm.rotation.x = -Math.PI / 3 + Math.sin(this.animTimer) * 0.1;
-        this.rightArm.rotation.x = -Math.PI / 3 - Math.sin(this.animTimer) * 0.1;
       }
-
       this.leftLeg.rotation.x = -angle;
       this.rightLeg.rotation.x = angle;
-
-      if (this.playerGlbScene) {
-        this.playerGlbScene.rotation.z = Math.sin(this.animTimer * 0.5) * 0.05;
-        this.playerGlbScene.position.y = Math.abs(Math.sin(this.animTimer * 2)) * 0.08;
-      }
     } else {
-      if (!this.carriedEggTier) {
+      if (!this.carriedEggTier && !this.carriedPetData) {
         this.leftArm.rotation.x *= 0.8;
         this.rightArm.rotation.x *= 0.8;
       }
       this.leftLeg.rotation.x *= 0.8;
       this.rightLeg.rotation.x *= 0.8;
-      if (this.playerGlbScene) {
-        this.playerGlbScene.rotation.z *= 0.8;
-        this.playerGlbScene.position.y *= 0.8;
-      }
-      this.animTimer = 0;
     }
+
+    this.updateNameTag();
   }
 
-  public trappedTimer: number = 0;
-  private currentTrappedState: boolean = false;
+  public frozenTimer: number = 0;
 
   private updateNameTag() {
     if (this.nameSprite) {
       this.group.remove(this.nameSprite);
       this.nameSprite = null;
     }
-    this.nameSprite = this.createNameTagSprite(this.nameString, this.isLocal, this.trappedTimer);
-    this.nameSprite.position.set(0, 3.2, 0);
+    this.nameSprite = this.createNameTagSprite(this.nameString, this.isLocal, this.trappedTimer, this.caughtStunTimer, this.frozenTimer);
+    this.nameSprite.position.set(0, 3.1, 0);
     this.group.add(this.nameSprite);
+
+    // Apply ice-blue tint if frozen
+    if (this.frozenTimer > 0) {
+      (this.head.material as THREE.MeshStandardMaterial).color.setHex(0x93c5fd);
+      (this.torso.material as THREE.MeshStandardMaterial).color.setHex(0x38bdf8);
+    } else {
+      (this.head.material as THREE.MeshStandardMaterial).color.setHex(0xffdbac);
+      (this.torso.material as THREE.MeshStandardMaterial).color.setHex(this.isLocal ? 0x2563eb : 0xd97706);
+    }
   }
 
-  private createNameTagSprite(name: string, isLocal: boolean, trappedTime: number = 0): THREE.Sprite {
+  private createNameTagSprite(name: string, isLocal: boolean, trappedTime: number = 0, stunTime: number = 0, freezeTime: number = 0): THREE.Sprite {
     const canvas = document.createElement("canvas");
     canvas.width = 300;
     canvas.height = 80;
     const ctx = canvas.getContext("2d")!;
 
-    if (trappedTime > 0) {
-      // Trapped Banner
+    if (freezeTime > 0) {
+      const mins = Math.floor(freezeTime / 60);
+      const secs = Math.floor(freezeTime % 60).toString().padStart(2, "0");
+      ctx.fillStyle = "rgba(185, 28, 28, 0.95)";
+      ctx.roundRect(8, 8, 284, 64, 14);
+      ctx.fill();
+      ctx.font = "Bold 22px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(`❄️ FROZEN (${mins}:${secs})`, 150, 40);
+    } else if (stunTime > 0) {
       ctx.fillStyle = "rgba(220, 38, 38, 0.95)";
       ctx.roundRect(8, 8, 284, 64, 14);
       ctx.fill();
-
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "#fef08a";
+      ctx.font = "Bold 24px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(`💥 STUNNED (${stunTime.toFixed(1)}s)`, 150, 40);
+    } else if (trappedTime > 0) {
+      ctx.fillStyle = "rgba(220, 38, 38, 0.95)";
       ctx.roundRect(8, 8, 284, 64, 14);
-      ctx.stroke();
-
+      ctx.fill();
       ctx.font = "Bold 24px 'Segoe UI', sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
