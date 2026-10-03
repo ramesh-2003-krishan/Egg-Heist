@@ -2,10 +2,11 @@
   "name": "egg-heist-server",
   "version": "1.0.0",
   "private": true,
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn src/index.ts",
     "build": "tsc",
+    "start": "node dist/index.js",
     "test:freeze": "ts-node --transpile-only test/freeze.test.ts",
     "test:sell": "ts-node --transpile-only test/sell.test.ts"
   },

@@ -19,6 +19,7 @@ class GameRoom extends colyseus_1.Room {
         this.nextTrapId = 1;
         this.nextChickenId = 1;
         this.nextCoinId = 1;
+        this.activePetSales = new Set();
     }
     onCreate(options) {
         this.setState(new GameState_1.GameState());
@@ -49,14 +50,66 @@ class GameRoom extends colyseus_1.Room {
                 console.error(`❌ [Server Error] Exception in 'interactKey' handler for ${client.sessionId}:`, err);
             }
         });
-        // 3. Drop Egg / Pet Listener (G Key)
+        // 3. Drop Egg / Pet Listener (G Key / Drop Action)
         this.onMessage("dropEgg", (client) => {
             try {
                 const player = this.state.players.get(client.sessionId);
                 if (!player || player.frozenTimer > 0)
                     return;
+                console.log(`🔍 [Server dropEgg] ${player.name} sent dropEgg. pos=(${player.x.toFixed(1)}, ${player.z.toFixed(1)}), baseIndex=${player.baseIndex}, carriedEggTier='${player.carriedEggTier}'`);
                 if (player.carriedEggTier) {
-                    console.log(`🥚 [Server] ${player.name} dropped carried egg (${player.carriedEggTier})`);
+                    // Check if standing inside ANY base incubator zone
+                    for (let b = 0; b < config_1.GAME_CONFIG.BASE_POSITIONS.length; b++) {
+                        const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[b];
+                        const incX = basePos.x + config_1.GAME_CONFIG.INCUBATOR_OFFSET.x;
+                        const incZ = basePos.z + config_1.GAME_CONFIG.INCUBATOR_OFFSET.z;
+                        const distToInc = Math.hypot(player.x - incX, player.z - incZ);
+                        if (distToInc <= 3.5) {
+                            // Ownership check: must be player's own base incubator!
+                            if (b !== player.baseIndex) {
+                                console.log(`🚫 [Server Incubator REJECT] ${player.name} tried to place egg into Base ${b}'s incubator! (Owned by player index ${player.baseIndex})`);
+                                const targetClient = this.clients.find((c) => c.sessionId === client.sessionId);
+                                if (targetClient) {
+                                    targetClient.send("serverAnnouncement", {
+                                        text: `⛔ You can only place eggs in your OWN base incubator!`,
+                                        rarity: "common",
+                                    });
+                                }
+                                return;
+                            }
+                            // Capacity check
+                            const maxCap = config_1.BASE_UPGRADES[Math.min(config_1.BASE_UPGRADES.length - 1, (player.baseTier || 1) - 1)]?.multiplier || 3;
+                            if (player.incubatorEggs.length >= maxCap) {
+                                console.log(`⚠️ [Server Incubator REJECT] ${player.name}'s incubator is full (${player.incubatorEggs.length}/${maxCap})`);
+                                const targetClient = this.clients.find((c) => c.sessionId === client.sessionId);
+                                if (targetClient) {
+                                    targetClient.send("serverAnnouncement", {
+                                        text: `⚠️ Your incubator is full! (${player.incubatorEggs.length}/${maxCap})`,
+                                        rarity: "common",
+                                    });
+                                }
+                                return;
+                            }
+                            // Place egg into incubator
+                            const tier = player.carriedEggTier;
+                            const incEgg = new GameState_1.Egg();
+                            incEgg.id = `inc_egg_${this.nextEggId++}`;
+                            incEgg.tier = tier;
+                            const tierConfig = config_1.EGG_TIERS[tier] || config_1.EGG_TIERS.common;
+                            incEgg.hatchTimeRemaining = tierConfig.hatchTimeSec;
+                            player.incubatorEggs.push(incEgg);
+                            player.carriedEggTier = "";
+                            player.carriedEgg = null;
+                            console.log(`🐣 [Server Incubator SUCCESS] ${player.name} placed ${tier} egg into incubator! Hatching in ${incEgg.hatchTimeRemaining}s. Slot count: ${player.incubatorEggs.length}/${maxCap}`);
+                            this.broadcast("serverAnnouncement", {
+                                text: `🐣 ${player.name} placed a ${tierConfig.name} egg into Incubator! Hatching in ${incEgg.hatchTimeRemaining}s!`,
+                                rarity: tier,
+                            });
+                            return;
+                        }
+                    }
+                    // Outside incubator zone: plain drop on ground
+                    console.log(`🥚 [Server Ground Drop] ${player.name} dropped carried egg (${player.carriedEggTier}) on ground`);
                     this.dropEggOnGround(player.x, player.z, player.carriedEggTier, client.sessionId);
                     player.carriedEggTier = "";
                     player.carriedEgg = null;
@@ -124,16 +177,194 @@ class GameRoom extends colyseus_1.Room {
                 console.error(`❌ [Server Error] Exception in 'sellEgg' handler:`, err);
             }
         });
-        // 7. Sell Pet Listener
-        this.onMessage("sellPet", (client, petId) => {
+        // 7. Sell Pet / Shop Storage Handlers
+        this.onMessage("sellCarriedPet", (client) => {
             try {
                 const player = this.state.players.get(client.sessionId);
-                if (!player || player.frozenTimer > 0)
+                if (!player || player.frozenTimer > 0 || player.freezeEndTime > Date.now())
                     return;
-                this.handlePlayerInteraction(client, petId);
+                if (!player.carriedPet)
+                    return;
+                const now = Date.now();
+                if (now - (player.lastInteractTime || 0) < config_1.GAME_CONFIG.INTERACT_COOLDOWN_MS)
+                    return;
+                player.lastInteractTime = now;
+                const stallPos = config_1.GAME_CONFIG.MARKET_STALL_POS;
+                const distToStall = Math.hypot(player.x - stallPos.x, player.z - stallPos.z);
+                if (distToStall > config_1.GAME_CONFIG.MARKET_STALL_RADIUS) {
+                    console.log(`⚠️ [Server Sell Carried Pet] Rejected: ${player.name} not at shop stall (${distToStall.toFixed(1)}m > ${config_1.GAME_CONFIG.MARKET_STALL_RADIUS}m).`);
+                    return;
+                }
+                const pet = player.carriedPet;
+                const basePrice = config_1.PET_SELL_BASE_PRICES[pet.rarity] || 100;
+                const sizeMult = config_1.PET_SIZE_MULTIPLIERS[pet.size] || 1.0;
+                const mutMult = config_1.PET_MUTATION_MULTIPLIERS[pet.mutation] || 1.0;
+                const finalPrice = Math.floor(basePrice * sizeMult * mutMult);
+                player.money += finalPrice;
+                player.carriedPet = null;
+                pet.carriedBy = "";
+                pet.isGroundPet = false;
+                client.send("petSoldSuccess", {
+                    petName: pet.name,
+                    rarity: pet.rarity,
+                    amount: finalPrice,
+                });
+                console.log(`💰 [Server Sell Carried Pet SUCCESS] ${player.name} sold carried ${pet.name} (${pet.rarity}) for $${finalPrice}!`);
+                if (finalPrice >= config_1.GAME_CONFIG.BIG_SALE_THRESHOLD || ["rare", "epic", "secret", "eternal", "divine"].includes(pet.rarity)) {
+                    this.broadcast("serverAnnouncement", {
+                        text: `💰 BIG SALE! ${player.name} sold a ${pet.rarity.toUpperCase()} ${pet.name} for $${finalPrice.toLocaleString()}!`,
+                        rarity: pet.rarity,
+                    });
+                }
             }
             catch (err) {
-                console.error(`❌ [Server Error] Exception in 'sellPet' handler:`, err);
+                console.error(`❌ [Server Error] Exception in 'sellCarriedPet' handler:`, err);
+            }
+        });
+        this.onMessage("debugForceGroundPet", (client) => {
+            if (process.env.NODE_ENV === "test") {
+                const player = this.state.players.get(client.sessionId);
+                if (!player)
+                    return;
+                const newPet = new GameState_1.Pet();
+                newPet.id = `pet_test_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+                newPet.name = "Test Dog";
+                newPet.rarity = "rare";
+                newPet.size = "normal";
+                newPet.mutation = "none";
+                newPet.moneyPerSec = 10;
+                newPet.isGroundPet = true;
+                newPet.x = player.x;
+                newPet.z = player.z;
+                player.groundPets.push(newPet);
+                console.log(`🧪 [TEST DEBUG] Forced ground pet ${newPet.id} for ${player.name} at (${player.x.toFixed(1)}, ${player.z.toFixed(1)})`);
+            }
+        });
+        this.onMessage("debugTeleport", (client, data) => {
+            if (process.env.NODE_ENV === "test") {
+                const player = this.state.players.get(client.sessionId);
+                if (player) {
+                    player.x = data.x;
+                    player.z = data.z;
+                    console.log(`🧪 [TEST DEBUG] Teleported ${player.name} to (${data.x}, ${data.z})`);
+                }
+            }
+        });
+        this.onMessage("storePetInShop", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || player.freezeEndTime > Date.now())
+                    return;
+                if (!player.carriedPet)
+                    return;
+                const stallPos = config_1.GAME_CONFIG.MARKET_STALL_POS;
+                const distToStall = Math.hypot(player.x - stallPos.x, player.z - stallPos.z);
+                if (distToStall > config_1.GAME_CONFIG.MARKET_STALL_RADIUS) {
+                    console.log(`⚠️ [Server Shop Storage] Rejected: ${player.name} not at shop stall zone (${distToStall.toFixed(1)}m > ${config_1.GAME_CONFIG.MARKET_STALL_RADIUS}m).`);
+                    return;
+                }
+                const pet = player.carriedPet;
+                player.carriedPet = null;
+                pet.carriedBy = "";
+                pet.isGroundPet = false;
+                player.shopPets.push(pet);
+                this.broadcast("serverAnnouncement", {
+                    text: `🛍️ ${player.name} stored ${pet.name} (${pet.rarity.toUpperCase()}) into Shop Storage!`,
+                    rarity: pet.rarity,
+                });
+                console.log(`🛍️ [Server Shop Storage] ${player.name} stored ${pet.name} into Shop Storage. (Total stored: ${player.shopPets.length})`);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'storePetInShop' handler:`, err);
+            }
+        });
+        this.onMessage("sellShopPet", (client, data) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || player.freezeEndTime > Date.now())
+                    return;
+                if (!data || !data.petId)
+                    return;
+                const stallPos = config_1.GAME_CONFIG.MARKET_STALL_POS;
+                const distToStall = Math.hypot(player.x - stallPos.x, player.z - stallPos.z);
+                if (distToStall > config_1.GAME_CONFIG.MARKET_STALL_RADIUS) {
+                    console.log(`⚠️ [Server Sell Pet] Rejected: ${player.name} not at shop stall.`);
+                    return;
+                }
+                // Per-pet double-click lock
+                if (this.activePetSales.has(data.petId)) {
+                    console.log(`🔒 [Server Sell Pet] Double-click lock active for pet ${data.petId}`);
+                    return;
+                }
+                const petIndex = player.shopPets.findIndex((p) => p.id === data.petId);
+                if (petIndex < 0) {
+                    console.log(`⚠️ [Server Sell Pet] Pet ${data.petId} not found in player's shop storage.`);
+                    return;
+                }
+                this.activePetSales.add(data.petId);
+                const pet = player.shopPets[petIndex];
+                if (!pet) {
+                    this.activePetSales.delete(data.petId);
+                    return;
+                }
+                const basePrice = config_1.PET_SELL_BASE_PRICES[pet.rarity] || 100;
+                const sizeMult = config_1.PET_SIZE_MULTIPLIERS[pet.size] || 1.0;
+                const mutMult = config_1.PET_MUTATION_MULTIPLIERS[pet.mutation] || 1.0;
+                const finalPrice = Math.floor(basePrice * sizeMult * mutMult);
+                player.money += finalPrice;
+                player.shopPets.splice(petIndex, 1);
+                this.activePetSales.delete(data.petId);
+                client.send("petSoldSuccess", {
+                    petName: pet.name,
+                    rarity: pet.rarity,
+                    amount: finalPrice,
+                });
+                console.log(`💰 [Server Pet Sale SUCCESS] ${player.name} sold ${pet.name} (${pet.rarity}) for $${finalPrice}!`);
+                if (finalPrice >= config_1.GAME_CONFIG.BIG_SALE_THRESHOLD || ["rare", "epic", "secret", "eternal", "divine"].includes(pet.rarity)) {
+                    this.broadcast("serverAnnouncement", {
+                        text: `💰 BIG SALE! ${player.name} sold a ${pet.rarity.toUpperCase()} ${pet.name} for $${finalPrice.toLocaleString()}!`,
+                        rarity: pet.rarity,
+                    });
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'sellShopPet' handler:`, err);
+                if (data?.petId)
+                    this.activePetSales.delete(data.petId);
+            }
+        });
+        this.onMessage("keepShopPet", (client, data) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0 || player.freezeEndTime > Date.now())
+                    return;
+                if (!data || !data.petId)
+                    return;
+                if (player.pets.length >= player.maxPetSlots) {
+                    client.send("serverAnnouncement", {
+                        text: `⛔ Base pet slots are full! (${player.pets.length}/${player.maxPetSlots})`,
+                        rarity: "common",
+                    });
+                    return;
+                }
+                const petIndex = player.shopPets.findIndex((p) => p.id === data.petId);
+                if (petIndex < 0)
+                    return;
+                const pet = player.shopPets[petIndex];
+                if (!pet)
+                    return;
+                player.shopPets.splice(petIndex, 1);
+                pet.isGroundPet = false;
+                pet.carriedBy = "";
+                player.pets.push(pet);
+                this.broadcast("serverAnnouncement", {
+                    text: `🏠 ${player.name} moved ${pet.name} (${pet.rarity.toUpperCase()}) to Base Slot for passive income!`,
+                    rarity: pet.rarity,
+                });
+                console.log(`🏠 [Server Keep Pet] ${player.name} moved ${pet.name} to active base slot.`);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'keepShopPet' handler:`, err);
             }
         });
         // 8. Fuse Pets Listener
@@ -214,6 +445,45 @@ class GameRoom extends colyseus_1.Room {
             }
             catch (err) {
                 console.error(`❌ [Server Error] Exception in 'useBat' handler:`, err);
+            }
+        });
+        // 11. Debug Test Handlers (NODE_ENV=test)
+        this.onMessage("debug_spawn_guarded_egg", (client) => {
+            try {
+                if (process.env.NODE_ENV !== "test")
+                    return;
+                const player = this.state.players.get(client.sessionId);
+                if (!player)
+                    return;
+                const egg = new GameState_1.Egg();
+                egg.id = `debug_egg_${this.nextEggId++}`;
+                egg.x = player.x + 0.5;
+                egg.z = player.z + 0.5;
+                egg.tier = "common";
+                egg.isGuarded = true;
+                egg.guardType = "chicken";
+                egg.guardState = "chasing";
+                egg.guardTargetId = client.sessionId;
+                egg.guardX = egg.x + 0.8;
+                egg.guardZ = egg.z + 0.8;
+                this.state.mapEggs.set(egg.id, egg);
+                console.log(`🧪 [Debug Test] Spawned chasing guarded egg ${egg.id} next to ${player.name}`);
+            }
+            catch (err) {
+                console.error(`❌ Exception in debug_spawn_guarded_egg:`, err);
+            }
+        });
+        this.onMessage("debug_trigger_alert", (client) => {
+            try {
+                if (process.env.NODE_ENV !== "test")
+                    return;
+                const player = this.state.players.get(client.sessionId);
+                if (!player)
+                    return;
+                this.triggerRedAlert(player, "Debug Test Trigger");
+            }
+            catch (err) {
+                console.error(`❌ Exception in debug_trigger_alert:`, err);
             }
         });
         // 10. Trap & Shop Upgrades Listeners
@@ -343,8 +613,8 @@ class GameRoom extends colyseus_1.Room {
             return;
         }
         // 1. Check Freeze or Stun States
-        if (player.frozenTimer > 0) {
-            console.log(`❄️ [Server Interact] REJECTED: Player ${player.name} is FROZEN (${player.frozenTimer}s remaining)`);
+        if (player.frozenTimer > 0 || player.freezeEndTime > Date.now()) {
+            console.log(`❄️ [Server Interact] REJECTED: Player ${player.name} is FROZEN until ${new Date(player.freezeEndTime).toISOString()}`);
             return;
         }
         if (player.trappedTimer > 0 || player.caughtStunTimer > 0) {
@@ -365,17 +635,15 @@ class GameRoom extends colyseus_1.Room {
         if (distToStall <= config_1.GAME_CONFIG.MARKET_STALL_RADIUS) {
             if (player.carriedPet) {
                 const pet = player.carriedPet;
-                const basePrice = config_1.PET_SELL_BASE_PRICES[pet.rarity] || 100;
-                const sizeMult = config_1.PET_SIZE_MULTIPLIERS[pet.size] || 1.0;
-                const mutMult = config_1.PET_MUTATION_MULTIPLIERS[pet.mutation] || 1.0;
-                const finalPrice = Math.floor(basePrice * sizeMult * mutMult);
-                player.money += finalPrice;
                 player.carriedPet = null;
+                pet.carriedBy = "";
+                pet.isGroundPet = false;
+                player.shopPets.push(pet);
                 this.broadcast("serverAnnouncement", {
-                    text: `💰 ${player.name} sold a ${pet.rarity.toUpperCase()} ${pet.name} for $${finalPrice.toLocaleString()}!`,
+                    text: `🛍️ ${player.name} stored ${pet.name} (${pet.rarity.toUpperCase()}) into Shop Storage!`,
                     rarity: pet.rarity,
                 });
-                console.log(`💰 [Server Interact SUCCESS] ${player.name} sold carried pet ${pet.name} for $${finalPrice}`);
+                console.log(`🛍️ [Server Interact SUCCESS] ${player.name} stored carried pet ${pet.name} into Shop Storage!`);
                 return;
             }
             if (player.carriedEggTier) {
@@ -391,12 +659,36 @@ class GameRoom extends colyseus_1.Room {
                 console.log(`🏷️ [Server Interact SUCCESS] ${player.name} sold carried ${tier} egg for $${price}`);
                 return;
             }
-            console.log(`🛍️ [Server Interact] ${player.name} is at Sell Stall but carrying nothing to sell.`);
-            return;
+            console.log(`🛍️ [Server Interact] ${player.name} is at Sell Stall carrying nothing to sell. Checking ground items...`);
         }
-        // CONTEXT B: Base Sanctuary Interaction
+        // CONTEXT B: Base Sanctuary & Incubator Interaction
         if (player.baseIndex >= 0 && player.baseIndex < config_1.GAME_CONFIG.BASE_POSITIONS.length) {
             const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
+            const incX = basePos.x + config_1.GAME_CONFIG.INCUBATOR_OFFSET.x;
+            const incZ = basePos.z + config_1.GAME_CONFIG.INCUBATOR_OFFSET.z;
+            const distToInc = Math.hypot(player.x - incX, player.z - incZ);
+            if (distToInc <= 3.5) {
+                if (player.carriedEggTier) {
+                    const maxCap = config_1.BASE_UPGRADES[Math.min(config_1.BASE_UPGRADES.length - 1, (player.baseTier || 1) - 1)]?.multiplier || 3;
+                    if (player.incubatorEggs.length < maxCap) {
+                        const tier = player.carriedEggTier;
+                        const incEgg = new GameState_1.Egg();
+                        incEgg.id = `inc_egg_${this.nextEggId++}`;
+                        incEgg.tier = tier;
+                        const tierConfig = config_1.EGG_TIERS[tier] || config_1.EGG_TIERS.common;
+                        incEgg.hatchTimeRemaining = tierConfig.hatchTimeSec;
+                        player.incubatorEggs.push(incEgg);
+                        player.carriedEggTier = "";
+                        player.carriedEgg = null;
+                        console.log(`🐣 [Server Interact SUCCESS] ${player.name} placed ${tier} egg into incubator via E key! Hatching in ${incEgg.hatchTimeRemaining}s. Slot count: ${player.incubatorEggs.length}/${maxCap}`);
+                        this.broadcast("serverAnnouncement", {
+                            text: `🐣 ${player.name} placed a ${tierConfig.name} egg into Incubator! Hatching in ${incEgg.hatchTimeRemaining}s!`,
+                            rarity: tier,
+                        });
+                        return;
+                    }
+                }
+            }
             const distToBase = Math.hypot(player.x - basePos.x, player.z - basePos.z);
             if (distToBase <= 8.0) {
                 // Option 1: Place carried pet into base slot
@@ -478,11 +770,17 @@ class GameRoom extends colyseus_1.Room {
     }
     // --- RED ALERT & FREEZE SYSTEM ---
     triggerRedAlert(player, reason) {
-        if (player.frozenTimer > 0)
+        if (player.frozenTimer > 0 || player.freezeEndTime > Date.now())
             return;
+        const now = Date.now();
+        if (player.lastRedAlertTime && now - player.lastRedAlertTime < 500) {
+            console.log(`⏳ [Server RedAlert Ignored] ${player.name} red alert triggered within 500ms cooldown period.`);
+            return;
+        }
+        player.lastRedAlertTime = now;
         player.redAlerts += 1;
-        player.lastAlertTime = Date.now();
-        console.log(`🚨 [Server] RED ALERT (${player.redAlerts}/${config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT}) for ${player.name}: ${reason}`);
+        player.lastAlertTime = now;
+        console.log(`🚨 [Server RedAlert Trace] ${player.name} received Red Alert (${player.redAlerts}/${config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT}). Reason: ${reason}`);
         // Send targeted client message for screen flash & sound
         const client = this.clients.find((c) => c.sessionId === player.id);
         if (client) {
@@ -497,7 +795,8 @@ class GameRoom extends colyseus_1.Room {
             rarity: "epic",
         });
         if (player.redAlerts >= config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT) {
-            this.freezePlayer(player, config_1.GAME_CONFIG.FREEZE_SECONDS);
+            const freezeSecs = process.env.NODE_ENV === "test" ? 3 : config_1.GAME_CONFIG.FREEZE_SECONDS;
+            this.freezePlayer(player, freezeSecs);
         }
     }
     freezePlayer(player, freezeSeconds) {
@@ -505,6 +804,8 @@ class GameRoom extends colyseus_1.Room {
         player.freezeEndTime = freezeEndTime;
         player.frozenTimer = freezeSeconds;
         player.redAlerts = config_1.GAME_CONFIG.RED_ALERT_MAX_COUNT;
+        // Zero out stored movement inputs
+        this.playerInputs.set(player.id, { moveX: 0, moveZ: 0, rotationY: player.rotationY });
         // Drop carried item onto ground for rivals to take
         if (player.carriedEggTier) {
             this.dropEggOnGround(player.x, player.z, player.carriedEggTier, player.id);
@@ -627,6 +928,17 @@ class GameRoom extends colyseus_1.Room {
             const chosenTier = rareTiers[Math.floor(Math.random() * rareTiers.length)];
             this.spawnRandomMapEgg(chosenTier);
         }
+        // Guard Rotation Timer (120s)
+        this.guardRotationTimer = (this.guardRotationTimer ?? config_1.GAME_CONFIG.GUARD_ROTATION_SECONDS) - dt;
+        this.guardCountdownTickTimer = (this.guardCountdownTickTimer ?? 0) + dt;
+        if (this.guardCountdownTickTimer >= 1.0) {
+            this.guardCountdownTickTimer = 0;
+            this.broadcast("guardRotationCountdown", { timeRemaining: Math.max(0, Math.floor(this.guardRotationTimer)) });
+        }
+        if (this.guardRotationTimer <= 0) {
+            this.guardRotationTimer = config_1.GAME_CONFIG.GUARD_ROTATION_SECONDS;
+            this.rotateGuardedEggs();
+        }
         // 1. Spawner
         this.spawnTimer += dt;
         if (this.spawnTimer >= config_1.GAME_CONFIG.SPAWN_INTERVAL_SEC &&
@@ -643,7 +955,7 @@ class GameRoom extends colyseus_1.Room {
                 if (egg.guardState === "chasing" && egg.guardTargetId) {
                     const targetPlayer = this.state.players.get(egg.guardTargetId);
                     let shouldStopChase = false;
-                    if (!targetPlayer || !targetPlayer.carriedEggTier || targetPlayer.carriedEgg?.id !== egg.id) {
+                    if (!targetPlayer || !targetPlayer.carriedEggTier || targetPlayer.carriedEgg?.id !== egg.id || targetPlayer.frozenTimer > 0 || targetPlayer.freezeEndTime > Date.now()) {
                         shouldStopChase = true;
                     }
                     else {
@@ -907,6 +1219,8 @@ class GameRoom extends colyseus_1.Room {
         });
     }
     executeGuardCatch(targetPlayer, egg) {
+        if (targetPlayer.frozenTimer > 0 || targetPlayer.freezeEndTime > Date.now())
+            return;
         const rawPenalty = targetPlayer.money * (config_1.GAME_CONFIG.GUARD_PENALTY_PERCENT_MIN + Math.random() * (config_1.GAME_CONFIG.GUARD_PENALTY_PERCENT_MAX - config_1.GAME_CONFIG.GUARD_PENALTY_PERCENT_MIN));
         let penalty = Math.max(config_1.GAME_CONFIG.GUARD_PENALTY_MIN, Math.min(config_1.GAME_CONFIG.GUARD_PENALTY_MAX, Math.floor(rawPenalty)));
         if (targetPlayer.money <= config_1.GAME_CONFIG.NEW_PLAYER_MONEY_THRESHOLD) {
@@ -941,6 +1255,33 @@ class GameRoom extends colyseus_1.Room {
             rarity: "secret",
         });
         console.log(`🚨 [Server] GUARD CATCH: ${targetPlayer.name} caught! Lost $${penalty}, stunned for 1.5s`);
+    }
+    rotateGuardedEggs() {
+        let rotatedCount = 0;
+        this.state.mapEggs.forEach((egg) => {
+            if (!egg)
+                return;
+            const chance = config_1.GUARDED_CHANCE_BY_TIER[egg.tier] || 0;
+            const isGuarded = Math.random() < chance;
+            egg.isGuarded = isGuarded;
+            if (isGuarded) {
+                egg.guardType = config_1.GUARD_ANIMAL_TYPES[Math.floor(Math.random() * config_1.GUARD_ANIMAL_TYPES.length)];
+                egg.guardX = egg.x + 0.8;
+                egg.guardZ = egg.z + 0.8;
+                egg.guardState = "sleeping";
+                egg.guardTargetId = "";
+                rotatedCount++;
+            }
+            else {
+                egg.guardState = "none";
+                egg.guardTargetId = "";
+            }
+        });
+        console.log(`🔄 [Server Guard Rotation] Re-evaluated guarded status for ${this.state.mapEggs.size} map eggs. ${rotatedCount} currently guarded.`);
+        this.broadcast("serverAnnouncement", {
+            text: `🚨 GUARD ROTATION! Guard animals have rotated to a new set of eggs!`,
+            rarity: "epic",
+        });
     }
     dropEggOnGround(x, z, tier, dropperSessionId) {
         const isGuarded = (config_1.GUARDED_CHANCE_BY_TIER[tier] || 0) > Math.random();

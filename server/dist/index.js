@@ -11,7 +11,8 @@ const ws_transport_1 = require("@colyseus/ws-transport");
 const GameRoom_1 = require("./rooms/GameRoom");
 const port = Number(process.env.PORT || 2567);
 const app = (0, express_1.default)();
-app.use((0, cors_1.default)());
+const clientOrigin = process.env.CLIENT_ORIGIN || process.env.CORS_ORIGIN || "*";
+app.use((0, cors_1.default)({ origin: clientOrigin }));
 app.use(express_1.default.json());
 const server = http_1.default.createServer(app);
 const gameServer = new colyseus_1.Server({
@@ -21,7 +22,7 @@ const gameServer = new colyseus_1.Server({
 });
 gameServer.define("game_room", GameRoom_1.GameRoom);
 app.get("/health", (req, res) => {
-    res.json({ status: "ok", game: "Egg Heist" });
+    res.status(200).json({ status: "ok", game: "Egg Heist" });
 });
 server.listen(port, () => {
     console.log(`🎮 Egg Heist Colyseus Server running on http://localhost:${port}`);

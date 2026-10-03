@@ -8,7 +8,8 @@ import { GameRoom } from "./rooms/GameRoom";
 const port = Number(process.env.PORT || 2567);
 const app = express();
 
-app.use(cors());
+const clientOrigin = process.env.CLIENT_ORIGIN || process.env.CORS_ORIGIN || "*";
+app.use(cors({ origin: clientOrigin }));
 app.use(express.json());
 
 const server = http.createServer(app);
@@ -22,7 +23,7 @@ const gameServer = new Server({
 gameServer.define("game_room", GameRoom);
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", game: "Egg Heist" });
+  res.status(200).json({ status: "ok", game: "Egg Heist" });
 });
 
 server.listen(port, () => {

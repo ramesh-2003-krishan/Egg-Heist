@@ -291,6 +291,7 @@ class Player extends schema_1.Schema {
         this.incubatorEggs = new schema_1.ArraySchema();
         this.pets = new schema_1.ArraySchema();
         this.groundPets = new schema_1.ArraySchema();
+        this.shopPets = new schema_1.ArraySchema();
         // Mechanics & Competitive Fields
         this.batCooldown = 0;
         this.trapCount = 3;
@@ -393,6 +394,10 @@ __decorate([
     (0, schema_1.type)([Pet]),
     __metadata("design:type", Object)
 ], Player.prototype, "groundPets", void 0);
+__decorate([
+    (0, schema_1.type)([Pet]),
+    __metadata("design:type", Object)
+], Player.prototype, "shopPets", void 0);
 __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)

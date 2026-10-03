@@ -77,8 +77,8 @@ async function runSellTest() {
 
     const expectedPrice1 = Math.floor(
       (PET_SELL_BASE_PRICES[carriedPet1.rarity] || 100) *
-        (PET_SIZE_MULTIPLIERS[carriedPet1.size] || 1.0) *
-        (PET_MUTATION_MULTIPLIERS[carriedPet1.mutation] || 1.0)
+      (PET_SIZE_MULTIPLIERS[carriedPet1.size] || 1.0) *
+      (PET_MUTATION_MULTIPLIERS[carriedPet1.mutation] || 1.0)
     );
 
     room.send("sellCarriedPet");
@@ -107,8 +107,8 @@ async function runSellTest() {
     const storedPetId = carriedPet2.id;
     const expectedPrice2 = Math.floor(
       (PET_SELL_BASE_PRICES[carriedPet2.rarity] || 100) *
-        (PET_SIZE_MULTIPLIERS[carriedPet2.size] || 1.0) *
-        (PET_MUTATION_MULTIPLIERS[carriedPet2.mutation] || 1.0)
+      (PET_SIZE_MULTIPLIERS[carriedPet2.size] || 1.0) *
+      (PET_MUTATION_MULTIPLIERS[carriedPet2.mutation] || 1.0)
     );
 
     // Store in shop storage

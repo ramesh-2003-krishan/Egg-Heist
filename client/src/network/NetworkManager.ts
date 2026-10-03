@@ -103,11 +103,8 @@ export class NetworkManager {
     this.setupUIEvents();
     this.setupBloxityEvents();
 
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const host = window.location.hostname || "localhost";
-    const wsUrl = `${protocol}://${host}:2567`;
-
-    this.client = new Client(wsUrl);
+    const serverUrl = import.meta.env.VITE_SERVER_URL || "ws://localhost:2567";
+    this.client = new Client(serverUrl);
   }
 
   private setupUIEvents() {

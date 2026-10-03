@@ -79,14 +79,81 @@ npm run dev
 - **Client**: `http://localhost:5173`
 - **Colyseus Server**: `ws://localhost:2567`
 
-### 3. Check Production Build
+### 3. Production Build & Start
 ```bash
-# Build Server
+# Build both server and client from root
+npm run build
+
+# Start production server
+cd server && npm run start
+```
+
+---
+
+## 📦 Production Deployment
+
+### 1. Environment Configuration
+
+Copy the example environment files in both `client/` and `server/` directories:
+
+#### Server Environment (`server/.env`)
+```env
+# Server Port (default: 2567)
+PORT=2567
+
+# Allowed Client Origin for CORS (e.g. https://your-client-domain.com or * for wildcard)
+CLIENT_ORIGIN=http://localhost:5173
+```
+
+#### Client Environment (`client/.env`)
+```env
+# URL for the Colyseus game server (WebSocket)
+VITE_SERVER_URL=ws://localhost:2567
+```
+
+> **Important Security Notice**: Never commit actual `.env` files or real secrets to version control. Always update `.env.example` templates and configure production secrets directly in your host environment.
+
+### 2. Building for Production
+
+From the root project directory:
+```bash
+npm run build
+```
+Or build client and server separately:
+```bash
+# Compile Server TypeScript (outputs to server/dist)
 cd server && npm run build
 
-# Build Client
+# Build Client static production bundle (outputs to client/dist)
 cd client && npm run build
 ```
+
+### 3. Running the Server in Production
+
+Start the compiled Node.js server:
+```bash
+cd server && npm run start
+```
+The server will run from `dist/index.js` listening on `PORT` (default `2567`).
+
+### 4. Health Check Endpoint
+
+Verify the server is running by sending a `GET /health` request:
+```bash
+curl http://localhost:2567/health
+```
+Response (`HTTP 200 OK`):
+```json
+{
+  "status": "ok",
+  "game": "Egg Heist"
+}
+```
+
+### 5. Cloud Hosting Suggestions
+
+- **Colyseus Backend Server**: Deploy `server/` to Node.js platforms such as Railway, Render, Fly.io, or Heroku. Ensure `PORT` is assigned by the host and set `CLIENT_ORIGIN` to your deployed client domain.
+- **Frontend Client**: Deploy static output (`client/dist`) to Vercel, Netlify, Cloudflare Pages, or GitHub Pages. Define `VITE_SERVER_URL` in your platform's environment settings pointing to your live WebSocket backend (e.g. `wss://your-server.up.railway.app`).
 
 ---
 

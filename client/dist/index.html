@@ -13,8 +13,8 @@
     />
     <!-- Bloxity SDK -->
     <script src="https://sdk.bloxity.io/legion-sdk.min.js"></script>
-    <script type="module" crossorigin src="/assets/index-CQOz9isg.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Dx18ywMh.css">
+    <script type="module" crossorigin src="/assets/index-B8AigNy9.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D-cAUHog.css">
   </head>
   <body>
     <div id="app"></div>
@@ -57,12 +57,16 @@
         </div>
       </div>
 
-      <!-- 4. LEFT-MIDDLE ACTION BUTTONS (SHOP & INDEX) -->
+      <!-- 4. LEFT-MIDDLE ACTION BUTTONS (SHOP, STORAGE & INDEX) -->
       <div id="left-middle-bar">
         <button id="open-shop-btn" class="action-btn btn-green">
           <span class="btn-icon">🛒</span>
           <span class="btn-label">SHOP</span>
           <span id="shop-badge" class="badge-alert hidden">!</span>
+        </button>
+        <button id="open-shop-storage-btn" class="action-btn btn-yellow">
+          <span class="btn-icon">📦</span>
+          <span class="btn-label">STORAGE</span>
         </button>
         <button id="open-index-btn" class="action-btn btn-cyan">
           <span class="btn-icon">📖</span>
@@ -95,7 +99,12 @@
         </div>
       </div>
 
-      <!-- 7. BOTTOM-CENTER HOTBAR -->
+      <!-- 7. CONTEXTUAL INTERACTION PROMPT -->
+      <div id="interaction-prompt-container" class="interaction-prompt-box hidden">
+        <span id="interaction-prompt-text" class="interaction-prompt-text">Press E to carry egg</span>
+      </div>
+
+      <!-- 8. BOTTOM-CENTER HOTBAR -->
       <div id="bottom-center-hotbar" class="cartoony-hotbar">
         <div id="hotbar-slot-1" class="hotbar-slot active" data-slot="1" title="Wooden Bat (Key 1)">
           <span class="slot-num">1</span>
@@ -120,10 +129,16 @@
         </div>
       </div>
 
-      <!-- 8. BOTTOM-RIGHT SPECIAL EGG COUNTDOWN CHIP -->
-      <div id="bottom-right-countdown" class="cartoony-chip">
-        <span class="chip-icon">✨</span>
-        <span id="countdown-timer-text" class="chip-text">next special egg in 2m 4s</span>
+      <!-- 8. BOTTOM-RIGHT SPECIAL EGG & GUARD ROTATION COUNTDOWN CHIPS -->
+      <div id="bottom-right-countdown-container" style="position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; z-index: 20;">
+        <div id="bottom-right-countdown" class="cartoony-chip">
+          <span class="chip-icon">✨</span>
+          <span id="countdown-timer-text" class="chip-text">next special egg in 2m 4s</span>
+        </div>
+        <div id="guard-rotation-countdown" class="cartoony-chip" style="border-color: #ef4444; color: #fca5a5;">
+          <span class="chip-icon">🚨</span>
+          <span id="guard-rotation-timer-text" class="chip-text">Guards change in 2:00</span>
+        </div>
       </div>
 
       <!-- 9. TUTORIAL ARROWS -->
@@ -223,6 +238,20 @@
           <div id="reward-rarity" class="modal-rarity">DIVINE</div>
           <div id="reward-title" class="modal-title">Divine Rainbow Trail</div>
           <button id="reward-close-btn" class="cartoony-btn btn-green">AWESOME!</button>
+        </div>
+      </div>
+
+      <!-- Shop Storage Modal -->
+      <div id="shop-storage-modal" class="modal-overlay hidden">
+        <div class="cartoony-modal shop-storage-card">
+          <div class="modal-header">
+            <span class="modal-title">🛍️ SHOP STORAGE</span>
+            <button id="shop-storage-close-btn" class="modal-close">✕</button>
+          </div>
+          <div class="shop-storage-subtitle">Sell stored pets for instant money or move to Base Slot for steady income!</div>
+          <div id="shop-storage-content" class="modal-body shop-storage-body">
+            <!-- Rendered dynamically -->
+          </div>
         </div>
       </div>
 
