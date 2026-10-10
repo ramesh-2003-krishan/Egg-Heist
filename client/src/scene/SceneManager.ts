@@ -326,6 +326,10 @@ export class SceneManager {
     return this.avatars.get(id);
   }
 
+  public getAvatars(): Map<string, Avatar> {
+    return this.avatars;
+  }
+
   public updateAvatarState(
     id: string,
     x: number,

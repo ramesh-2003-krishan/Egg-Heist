@@ -323,6 +323,9 @@ class Player extends schema_1.Schema {
         this.faceId = "";
         this.shirtId = "";
         this.pantsId = "";
+        this.maskId = "";
+        this.boxityUserId = "";
+        this.currentEmoteId = "";
     }
 }
 exports.Player = Player;
@@ -498,6 +501,18 @@ __decorate([
     (0, schema_1.type)("string"),
     __metadata("design:type", String)
 ], Player.prototype, "pantsId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "maskId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "boxityUserId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], Player.prototype, "currentEmoteId", void 0);
 class GameState extends schema_1.Schema {
     constructor() {
         super(...arguments);
