@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { SceneManager } from "./scene/SceneManager";
 import { InputManager } from "./input/InputManager";
 import { NetworkManager } from "./network/NetworkManager";
+import { initBloxity, loadingStart, loadingStep } from "./bloxity";
 import "./style.css";
 
 class GameApp {
@@ -25,6 +26,14 @@ class GameApp {
   }
 
   private async init() {
+    try {
+      loadingStart();
+      loadingStep("Initializing Boxity SDK...");
+      await initBloxity();
+    } catch (e) {
+      console.warn("⚠️ [Boxity] SDK initialization notice:", e);
+    }
+
     // 1. Connect to Colyseus Server
     await this.networkManager.connect();
 

@@ -30,6 +30,9 @@ class GameRoom extends colyseus_1.Room {
                 if (!player || player.frozenTimer > 0)
                     return;
                 if (typeof data.moveX === "number" && typeof data.moveZ === "number") {
+                    if (data.moveX !== 0 || data.moveZ !== 0) {
+                        player.currentEmoteId = "";
+                    }
                     this.playerInputs.set(client.sessionId, {
                         moveX: Math.max(-1, Math.min(1, data.moveX)),
                         moveZ: Math.max(-1, Math.min(1, data.moveZ)),
@@ -592,10 +595,55 @@ class GameRoom extends colyseus_1.Room {
                 player.faceId = sanitizeId(cosmetics.faceId);
                 player.shirtId = sanitizeId(cosmetics.shirtId);
                 player.pantsId = sanitizeId(cosmetics.pantsId);
-                console.log(`👤 [Server] Player ${player.name} updated Bloxity cosmetics (Skin: '${player.skinId}', Hat: '${player.hatId}')`);
+                player.maskId = sanitizeId(cosmetics.maskId);
+                player.boxityUserId = sanitizeId(cosmetics.boxityUserId);
+                console.log(`👤 [Server] Player ${player.name} updated Bloxity cosmetics (Skin: '${player.skinId}', Hat: '${player.hatId}', BoxityUser: '${player.boxityUserId}')`);
             }
             catch (err) {
                 console.error(`❌ [Server Error] Exception in 'updateBloxityAvatar' handler:`, err);
+            }
+        });
+        // Emote Replicate Listener (validated 24-character alphanumeric string)
+        this.onMessage("playEmote", (client, data) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || typeof data?.emoteId !== "string")
+                    return;
+                const emoteId = data.emoteId.trim();
+                if (/^[A-Za-z0-9]{24}$/.test(emoteId)) {
+                    player.currentEmoteId = emoteId;
+                }
+                else {
+                    player.currentEmoteId = "";
+                }
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'playEmote' handler:`, err);
+            }
+        });
+        // Boxity Respawn Request Listener
+        this.onMessage("respawnRequest", (client) => {
+            try {
+                const player = this.state.players.get(client.sessionId);
+                if (!player || player.frozenTimer > 0)
+                    return;
+                if (player.baseIndex >= 0 && player.baseIndex < config_1.GAME_CONFIG.BASE_POSITIONS.length) {
+                    const basePos = config_1.GAME_CONFIG.BASE_POSITIONS[player.baseIndex];
+                    player.x = basePos.x;
+                    player.y = 0;
+                    player.z = basePos.z;
+                }
+                else {
+                    player.x = 0;
+                    player.y = 0;
+                    player.z = 0;
+                }
+                player.currentEmoteId = "";
+                this.playerInputs.set(client.sessionId, { moveX: 0, moveZ: 0, rotationY: player.rotationY });
+                console.log(`🔄 [Server] Player ${player.name} respawned via Boxity respawn_request.`);
+            }
+            catch (err) {
+                console.error(`❌ [Server Error] Exception in 'respawnRequest' handler:`, err);
             }
         });
         // Initial map egg wave

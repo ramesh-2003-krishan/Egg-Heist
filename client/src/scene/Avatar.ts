@@ -3,7 +3,14 @@ import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { EGG_TIERS } from "../config";
-import { BLOXITY_STATIC_CDN, getSkinTextureUrl, getUser } from "../bloxity";
+import {
+  BLOXITY_STATIC_CDN,
+  getSkinTextureUrl,
+  getUser,
+  buildRemoteSkinUrl,
+  getEmote,
+  BoxityEmoteClip,
+} from "../bloxity";
 
 let cachedGlbScene: THREE.Object3D | null = null;
 let glbLoadPromise: Promise<THREE.Object3D> | null = null;
@@ -49,6 +56,15 @@ export class Avatar {
   public shirtId: string = "";
   public pantsId: string = "";
   public maskId: string = "";
+  public boxityUserId: string = "";
+
+  // Emote playback state
+  public currentEmoteId: string = "";
+  private activeEmoteClip: BoxityEmoteClip | null = null;
+  private emoteTimer: number = 0;
+  private rigBones: Map<string, THREE.Object3D> = new Map();
+  private rigBindQuats: Map<string, THREE.Quaternion> = new Map();
+  private bubbleRoot: THREE.Group;
 
   // Container References
   private boxAvatarGroup: THREE.Group;
@@ -111,6 +127,10 @@ export class Avatar {
 
     this.boxAvatarGroup = new THREE.Group();
     this.group.add(this.boxAvatarGroup);
+
+    this.bubbleRoot = new THREE.Group();
+    this.bubbleRoot.position.set(0, 3.8, 0);
+    this.group.add(this.bubbleRoot);
 
     const shirtColor = isLocal ? 0x1d4ed8 : 0x10b981;
     const pantsColor = 0x1f2937;
@@ -202,11 +222,34 @@ export class Avatar {
         this.legL1Bone = null;
         this.legR1Bone = null;
 
+        this.rigBones.clear();
+        this.rigBindQuats.clear();
+
+        const targetRigBoneNames = [
+          "ArmR_Offset", "ArmR1", "ArmR2",
+          "ArmL_Offset", "ArmL1", "ArmL2",
+          "Spine1", "Neck1",
+          "LegR1", "LegR2",
+          "LegL1", "LegL2"
+        ];
+
         this.playerGlbScene.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
           }
+
+          // Rig bone collection for emotes
+          for (const targetName of targetRigBoneNames) {
+            if (
+              child.name === targetName ||
+              child.name.toLowerCase() === targetName.toLowerCase()
+            ) {
+              this.rigBones.set(targetName, child);
+              this.rigBindQuats.set(targetName, child.quaternion.clone());
+            }
+          }
+
           if (
             !this.neck1Bone &&
             (child.name === "Neck1" || child.name === "neck1" || child.name === "Head" || child.name === "head")
@@ -307,8 +350,7 @@ export class Avatar {
   public applyBloxitySkinTexture() {
     let textureUrl = this.isLocal ? getSkinTextureUrl() || "" : "";
     if (!textureUrl) {
-      const sId = this.skinId && this.skinId !== "-1" ? this.skinId : "0";
-      textureUrl = `https://api.bloxity.io/v1/avatar/skin-texture/s${sId}.png`;
+      textureUrl = buildRemoteSkinUrl(this.skinId, this.pantsId, this.shirtId, this.faceId);
     }
 
     this.textureLoader.load(
@@ -587,6 +629,31 @@ export class Avatar {
     this.targetRotationY = rotY;
   }
 
+  public getBubbleRoot(): THREE.Group {
+    return this.bubbleRoot;
+  }
+
+  public playEmote(emoteId: string) {
+    if (!emoteId || typeof emoteId !== "string") {
+      this.stopEmote();
+      return;
+    }
+    const emote = getEmote(emoteId);
+    this.currentEmoteId = emoteId;
+    this.emoteTimer = 0;
+    this.activeEmoteClip = emote?.clip || null;
+  }
+
+  public stopEmote() {
+    this.currentEmoteId = "";
+    this.activeEmoteClip = null;
+    this.emoteTimer = 0;
+    for (const [name, bone] of this.rigBones.entries()) {
+      const bind = this.rigBindQuats.get(name);
+      if (bind) bone.quaternion.copy(bind);
+    }
+  }
+
   public update(dt: number) {
     const lerpFactor = this.isLocal ? 0.3 : 0.2;
     this.group.position.lerp(this.targetPosition, lerpFactor);
@@ -600,8 +667,11 @@ export class Avatar {
       this.crownGroup.rotation.y += dt * 1.5;
     }
 
-    // Walking animation
+    // Walking animation vs. Emote animation
     if (this.isMoving && this.caughtStunTimer <= 0) {
+      if (this.currentEmoteId) {
+        this.stopEmote();
+      }
       const animSpeed = 10 * (this.speed / 10);
       this.animTimer += dt * Math.min(30, animSpeed);
       const angle = Math.sin(this.animTimer) * 0.6;
@@ -639,35 +709,90 @@ export class Avatar {
       this.leftLeg.rotation.x = -angle;
       this.rightLeg.rotation.x = angle;
     } else {
-      if (this.carriedEggTier || this.carriedPetData) {
-        const carryArmQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 3);
-        if (this.armL1Bone && this.armL1BaseQuat) {
-          this.armL1Bone.quaternion.copy(this.armL1BaseQuat).premultiply(carryArmQuat);
-        }
-        if (this.armR1Bone && this.armR1BaseQuat) {
-          this.armR1Bone.quaternion.copy(this.armR1BaseQuat).premultiply(carryArmQuat);
-        }
-        this.leftArm.rotation.x = -Math.PI / 3;
-        this.rightArm.rotation.x = -Math.PI / 3;
-      } else {
-        if (this.armL1Bone && this.armL1BaseQuat) {
-          this.armL1Bone.quaternion.slerp(this.armL1BaseQuat, 0.2);
-        }
-        if (this.armR1Bone && this.armR1BaseQuat) {
-          this.armR1Bone.quaternion.slerp(this.armR1BaseQuat, 0.2);
-        }
-        this.leftArm.rotation.x *= 0.8;
-        this.rightArm.rotation.x *= 0.8;
-      }
+      if (this.activeEmoteClip) {
+        this.emoteTimer += dt;
+        const clip = this.activeEmoteClip;
+        const evalTime =
+          clip.loop && clip.len > 0
+            ? this.emoteTimer % clip.len
+            : Math.min(this.emoteTimer, clip.len);
+        const blendFactor = Math.min(1, this.emoteTimer / 0.1);
 
-      if (this.legL1Bone && this.legL1BaseQuat) {
-        this.legL1Bone.quaternion.slerp(this.legL1BaseQuat, 0.2);
+        for (const [boneName, track] of Object.entries(clip.tracks)) {
+          const bone = this.rigBones.get(boneName);
+          const bindQuat = this.rigBindQuats.get(boneName);
+          if (!bone || !bindQuat || !Array.isArray(track) || track.length === 0) continue;
+
+          let xDeg = 0;
+          let yDeg = 0;
+          let zDeg = 0;
+
+          if (evalTime <= track[0][0]) {
+            xDeg = track[0][1];
+            yDeg = track[0][2];
+            zDeg = track[0][3];
+          } else if (evalTime >= track[track.length - 1][0]) {
+            const last = track[track.length - 1];
+            xDeg = last[1];
+            yDeg = last[2];
+            zDeg = last[3];
+          } else {
+            let idx = 0;
+            while (idx < track.length - 1 && track[idx + 1][0] < evalTime) {
+              idx++;
+            }
+            const k0 = track[idx];
+            const k1 = track[idx + 1];
+            const span = k1[0] - k0[0];
+            const t = span > 0 ? (evalTime - k0[0]) / span : 0;
+            const s = Math.max(0, Math.min(1, t));
+            const smoothS = s * s * (3 - 2 * s);
+            xDeg = k0[1] + (k1[1] - k0[1]) * smoothS;
+            yDeg = k0[2] + (k1[2] - k0[2]) * smoothS;
+            zDeg = k0[3] + (k1[3] - k0[3]) * smoothS;
+          }
+
+          const deltaEuler = new THREE.Euler(
+            THREE.MathUtils.degToRad(xDeg),
+            THREE.MathUtils.degToRad(yDeg),
+            THREE.MathUtils.degToRad(zDeg),
+            "XYZ"
+          );
+          const deltaQuat = new THREE.Quaternion().setFromEuler(deltaEuler);
+          const targetQuat = bindQuat.clone().multiply(deltaQuat);
+          bone.quaternion.copy(bindQuat).slerp(targetQuat, blendFactor);
+        }
+      } else {
+        if (this.carriedEggTier || this.carriedPetData) {
+          const carryArmQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 3);
+          if (this.armL1Bone && this.armL1BaseQuat) {
+            this.armL1Bone.quaternion.copy(this.armL1BaseQuat).premultiply(carryArmQuat);
+          }
+          if (this.armR1Bone && this.armR1BaseQuat) {
+            this.armR1Bone.quaternion.copy(this.armR1BaseQuat).premultiply(carryArmQuat);
+          }
+          this.leftArm.rotation.x = -Math.PI / 3;
+          this.rightArm.rotation.x = -Math.PI / 3;
+        } else {
+          if (this.armL1Bone && this.armL1BaseQuat) {
+            this.armL1Bone.quaternion.slerp(this.armL1BaseQuat, 0.2);
+          }
+          if (this.armR1Bone && this.armR1BaseQuat) {
+            this.armR1Bone.quaternion.slerp(this.armR1BaseQuat, 0.2);
+          }
+          this.leftArm.rotation.x *= 0.8;
+          this.rightArm.rotation.x *= 0.8;
+        }
+
+        if (this.legL1Bone && this.legL1BaseQuat) {
+          this.legL1Bone.quaternion.slerp(this.legL1BaseQuat, 0.2);
+        }
+        if (this.legR1Bone && this.legR1BaseQuat) {
+          this.legR1Bone.quaternion.slerp(this.legR1BaseQuat, 0.2);
+        }
+        this.leftLeg.rotation.x *= 0.8;
+        this.rightLeg.rotation.x *= 0.8;
       }
-      if (this.legR1Bone && this.legR1BaseQuat) {
-        this.legR1Bone.quaternion.slerp(this.legR1BaseQuat, 0.2);
-      }
-      this.leftLeg.rotation.x *= 0.8;
-      this.rightLeg.rotation.x *= 0.8;
     }
 
     this.updateNameTag();

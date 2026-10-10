@@ -8,6 +8,7 @@ import {
   PET_SLOT_UPGRADES,
   GAME_CONFIG,
 } from "../config";
+import * as THREE from "three";
 import {
   initBloxity,
   getUser,
@@ -16,10 +17,16 @@ import {
   onUserChanged,
   getEquippedCosmetics,
   onAvatarChanged,
+  loadingStep,
   loadingEnd,
   gameplayStart,
-  BloxityUser,
+  onPlayerEvent,
+  onChatMessage,
+  attachBubble,
+  bubbleText,
+  BoxityUser,
 } from "../bloxity";
+import { Avatar } from "../scene/Avatar";
 
 import { UIManager } from "../ui/UIManager";
 
@@ -196,7 +203,7 @@ export class NetworkManager {
       });
     }
 
-    onUserChanged((user: BloxityUser | null) => {
+    onUserChanged((user: BoxityUser | null) => {
       this.updateBloxityAuthUI(user);
       this.sendLocalBloxityCosmetics();
     });
@@ -211,9 +218,45 @@ export class NetworkManager {
         }
       }
     });
+
+    onPlayerEvent((event, data) => {
+      if (event === "play_emote" && data) {
+        this.room?.send("playEmote", { emoteId: data });
+        if (this.localSessionId) {
+          const localAvatar = this.sceneManager.getAvatar(this.localSessionId);
+          localAvatar?.playEmote(data);
+        }
+      } else if (event === "respawn_request") {
+        this.room?.send("respawnRequest");
+      }
+    });
+
+    onChatMessage((m) => {
+      try {
+        let targetAvatar: Avatar | undefined;
+        if (m.isLocalPlayer && this.localSessionId) {
+          targetAvatar = this.sceneManager.getAvatar(this.localSessionId);
+        } else {
+          const cleanUserId = (m.userId || "").replace(/^legion_/, "");
+          const allAvatars = this.sceneManager.getAvatars();
+          for (const [_, av] of allAvatars.entries()) {
+            const avUserId = (av.boxityUserId || "").replace(/^legion_/, "");
+            if (avUserId && avUserId === cleanUserId) {
+              targetAvatar = av;
+              break;
+            }
+          }
+        }
+        if (targetAvatar) {
+          attachBubble(THREE, targetAvatar.getBubbleRoot(), bubbleText(m));
+        }
+      } catch (err) {
+        console.warn("⚠️ [Boxity] Chat bubble attach failed (cosmetic):", err);
+      }
+    });
   }
 
-  private updateBloxityAuthUI(user: BloxityUser | null) {
+  private updateBloxityAuthUI(user: BoxityUser | null) {
     if (user) {
       if (this.bloxityLoggedOutBox) this.bloxityLoggedOutBox.classList.add("hidden");
       if (this.bloxityLoggedInBox) this.bloxityLoggedInBox.classList.remove("hidden");
@@ -231,10 +274,13 @@ export class NetworkManager {
 
   private sendLocalBloxityCosmetics() {
     if (!this.room) return;
-    const cosmetics = getEquippedCosmetics();
-    if (cosmetics) {
-      this.room.send("updateBloxityAvatar", cosmetics);
-    }
+    const cosmetics = getEquippedCosmetics() || {};
+    const user = getUser();
+    const payload = {
+      ...cosmetics,
+      boxityUserId: user?._id || "",
+    };
+    this.room.send("updateBloxityAvatar", payload);
   }
 
   private toggleShopModal() {
@@ -266,6 +312,7 @@ export class NetworkManager {
 
   public async connect(): Promise<void> {
     try {
+      loadingStep("Connecting to server...");
       if (this.statusElement) {
         this.statusElement.textContent = "Connecting to Colyseus server...";
         this.statusElement.className = "connecting";
@@ -481,6 +528,16 @@ export class NetworkManager {
               avatar.setIsRichest(isRichest);
               avatar.caughtStunTimer = (player as any).caughtStunTimer || 0;
               avatar.frozenTimer = (player as any).frozenTimer || 0;
+              avatar.boxityUserId = (player as any).boxityUserId || "";
+
+              const emoteId = (player as any).currentEmoteId || "";
+              if (emoteId) {
+                if (avatar.currentEmoteId !== emoteId) {
+                  avatar.playEmote(emoteId);
+                }
+              } else if (avatar.currentEmoteId) {
+                avatar.stopEmote();
+              }
             }
 
             if (sessionId === this.localSessionId) {

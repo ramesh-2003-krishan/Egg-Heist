@@ -111,6 +111,9 @@ export class Player extends Schema {
   @type("string") faceId: string = "";
   @type("string") shirtId: string = "";
   @type("string") pantsId: string = "";
+  @type("string") maskId: string = "";
+  @type("string") boxityUserId: string = "";
+  @type("string") currentEmoteId: string = "";
 }
 
 export class GameState extends Schema {

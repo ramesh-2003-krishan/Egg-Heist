@@ -216,44 +216,71 @@ npm run test:freeze
 
 ---
 
-## 👤 Bloxity Integration
+## 👤 Boxity SDK Integration (`window.Legion.SDK`)
 
-### What's Integrated:
-1. **SDK Authentication & User Profile**:
-   - HUD auth bar displays profile display name and user avatar picture (`pfp`).
-   - `Legion.SDK.auth.showAuthPopup()` triggers cross-game login popup window.
-2. **3D Character Model (`player.glb`) & SkeletonUtils Cloning**:
-   - Loads base avatar model from `https://static.bloxity.io/avatars/player.glb`.
-   - Uses `SkeletonUtils.clone` per player to preserve skinned mesh rigging while eliminating redundant HTTP requests.
-3. **Dynamic Skin Texture Synthesis**:
-   - Local player skin texture URL fetched via `Legion.SDK.avatar.getSkinTextureUrl()`.
-   - Remote player skin texture synthesized using spec: `https://api.bloxity.io/v1/avatar/skin-texture/s{skinId}[_pn{pantsId}][_sh{shirtId}][_fc{faceId}].png`.
-4. **3D Accessories (Hats, Hair, Masks)**:
-   - Attached directly to `Neck1` bone at local offset `(0, 0.8, 0)`.
-   - `.obj` models loaded from `/items/hats/{id}.obj` with `/textures/hats/{id}.png`.
-5. **Server Validation & Synchronization**:
-   - Colyseus server validates every cosmetic ID in `updateBloxityAvatar` handler (string, at most 40 chars, regex `^[A-Za-z0-9_-]*$`).
-   - Full room state synchronization broadcasts updated player look across all connected clients.
-6. **Guest & Load Fallback**:
-   - If player is a guest or model load fails, avatar falls back to box model displaying a `(Guest)` badge tag.
+### Architecture & Scope
+- **Integration Module**: Encapsulated in `client/src/bloxity.ts`.
+- **Game Slug Constant**: `BOXITY_GAME_SLUG = "egg-heist"`.
+- **Server Architecture**: Colyseus server runs on Render (authoritative game loop & WebSocket sync). Out-of-scope features are explicitly commented with `// TODO`:
+  - `Legion.SDK.net` & `resolveEndpoint`
+  - `play.bloxity.io` & party play
+  - Room & Stats reporters
+  - Gems purchases & webhooks
+  - Friends & settings sync
 
-### Slug Configuration:
-- `BLOXITY_GAME_SLUG`: `"egg-heist"` (defined in `client/src/bloxity.ts`).
+### Implemented Features
+1. **Authentication & Cross-Game Identity**:
+   - `Legion.SDK.auth.onUserChanged()` acts as single source of truth.
+   - User profile (avatar picture, display name) updates HUD in real time.
+   - "Log In with Boxity" triggers `Legion.SDK.auth.showAuthPopup()`.
+   - Logging out triggers `Legion.SDK.auth.logout()`.
+2. **Avatar Cosmetics & Skin Synthesis**:
+   - 3D `player.glb` model loaded with `GLTFLoader` and instanced per player with `SkeletonUtils.clone`.
+   - Local player skin texture fetched via `Legion.SDK.avatar.getSkinTextureUrl()`.
+   - Remote player skin texture synthesized via canonical spec:  
+     `https://api.bloxity.io/v1/avatar/skin-texture/s{skinId}[_pn{pantsId}][_sh{shirtId}][_fc{faceId}].png`
+   - Hats, hair, and masks loaded from `/items/hats/{id}.obj` and mounted onto character bones.
+   - Server-side validation strictly sanitizes all cosmetic IDs (`A-Za-z0-9_-`, max 40 chars).
+3. **Bone-Driven Emotes System**:
+   - Catalog fetched from `https://api.bloxity.io/v1/avatar/emotes` at initialization.
+   - Procedural bone animation evaluated across rig bones (`ArmR_Offset`, `ArmR1`, `ArmR2`, `ArmL_Offset`, `ArmL1`, `ArmL2`, `Spine1`, `Neck1`, `LegR1`, `LegR2`, `LegL1`, `LegL2`).
+   - Smoothstep interpolation `s * s * (3 - 2 * s)` between keyframes with Euler XYZ degree deltas right-multiplied onto bind quaternions.
+   - Smooth 0.1s blend-in, loops on `time % len`, automatically cancels and resumes walking pose when the player moves.
+   - Replicated via Colyseus state (`currentEmoteId` validated as 24-character alphanumeric string).
+4. **Overhead Chat Bubbles**:
+   - Listens to `Legion.SDK.chat.onMessage()`.
+   - Attaches 3D billboard chat bubbles via `Legion.SDK.chat.attachBubble()` to player's overhead `bubbleRoot` (3.8 units above feet).
+   - Bubbles automatically fade after 4 seconds and replace older bubbles.
+5. **Game Lifecycle Hooks**:
+   - `Legion.SDK.game.loadingStart()` & `loadingStep()` during asset and server initialization.
+   - `Legion.SDK.game.loadingEnd()` once connected to room.
+   - `Legion.SDK.game.gameplayStart()` upon entering movement.
+   - `respawn_request` player event triggers server-authoritative repositioning to base platform.
 
-### How to Test Login & Avatar Model by Hand:
-1. Run `npm run dev`.
-2. Open **Tab 1** (`http://localhost:5173`).
-3. **Guest Fallback Test**:
-   - Without logging in, observe your avatar uses the box avatar fallback with `Player_xxxx (Guest)` overhead name tag.
-4. **Login & 3D Character Model Test**:
-   - Click **"Log In with Bloxity"** in the top-right HUD.
-   - Complete authentication in popup window.
-   - Observe HUD avatar picture and name update instantly.
-   - Observe character model converts from box avatar to 3D Bloxity character model (`player.glb`), applying skin texture and equipped accessories on the `Neck1` bone.
-5. **Multiplayer Remote Sync Test**:
-   - Open **Tab 2** (`http://localhost:5173`).
-   - In Tab 1, equip or update avatar cosmetics via Bloxity SDK.
-   - In Tab 2, observe Tab 1 player's 3D Bloxity model, skin texture, and accessories update dynamically in real time.
+### How to Test (Two Browser Tabs)
+1. Start the dev environment:
+   ```bash
+   npm run dev
+   ```
+2. Open **Tab 1** (`http://localhost:5173`) and **Tab 2** (`http://localhost:5173`).
+3. **Guest Look**:
+   - Without logging in, observe your avatar uses guest fallback with `(Guest)` in the name tag.
+4. **Log In with Boxity**:
+   - Click "Log In with Boxity" in the top-right HUD on Tab 1.
+   - Complete authentication in the popup window.
+   - Observe Tab 1 HUD displays your Boxity display name and profile picture.
+   - In Tab 2, observe Tab 1's avatar updates to your 3D character with your skin texture and accessories.
+5. **Test Emotes**:
+   - Trigger an emote from the Boxity SDK overlay or player event.
+   - Observe Tab 1's character performs the smoothstep procedural bone animation.
+   - In Tab 2, verify Tab 1's character is also playing the identical emote smoothly.
+   - Press `W` to move—observe the emote instantly cancels and normal walking animation takes over.
+6. **Test Overhead Chat Bubbles**:
+   - Send a chat message through Boxity SDK chat.
+   - Observe the 3D billboard chat bubble appears directly above the player's head for 4 seconds in both tabs.
+7. **Test Respawn Request**:
+   - Trigger a respawn request via Boxity SDK overlay (`respawn_request`).
+   - Verify player teleports safely back to their designated base platform.
 
 ---
 
