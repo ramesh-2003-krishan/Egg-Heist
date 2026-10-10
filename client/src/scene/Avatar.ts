@@ -54,6 +54,14 @@ export class Avatar {
   private boxAvatarGroup: THREE.Group;
   private playerGlbScene: THREE.Group | null = null;
   private neck1Bone: THREE.Object3D | null = null;
+  private armL1Bone: THREE.Object3D | null = null;
+  private armR1Bone: THREE.Object3D | null = null;
+  private legL1Bone: THREE.Object3D | null = null;
+  private legR1Bone: THREE.Object3D | null = null;
+  private armL1BaseQuat: THREE.Quaternion | null = null;
+  private armR1BaseQuat: THREE.Quaternion | null = null;
+  private legL1BaseQuat: THREE.Quaternion | null = null;
+  private legR1BaseQuat: THREE.Quaternion | null = null;
   private isGlbLoaded: boolean = false;
 
   private torso: THREE.Mesh;
@@ -184,10 +192,16 @@ export class Avatar {
       .then((baseScene) => {
         const clonedScene = SkeletonUtils.clone(baseScene) as THREE.Group;
         this.playerGlbScene = clonedScene;
-        this.playerGlbScene.scale.set(1.1, 1.1, 1.1);
+        // Scale player.glb (height ~6.4) to match player height (~2.4)
+        this.playerGlbScene.scale.set(0.375, 0.375, 0.375);
         this.playerGlbScene.position.set(0, 0, 0);
 
         this.neck1Bone = null;
+        this.armL1Bone = null;
+        this.armR1Bone = null;
+        this.legL1Bone = null;
+        this.legR1Bone = null;
+
         this.playerGlbScene.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             child.castShadow = true;
@@ -198,15 +212,27 @@ export class Avatar {
             (child.name === "Neck1" || child.name === "neck1" || child.name === "Head" || child.name === "head")
           ) {
             this.neck1Bone = child;
+          } else if (child.name === "ArmL1" || child.name === "armL1") {
+            this.armL1Bone = child;
+            this.armL1BaseQuat = child.quaternion.clone();
+          } else if (child.name === "ArmR1" || child.name === "armR1") {
+            this.armR1Bone = child;
+            this.armR1BaseQuat = child.quaternion.clone();
+          } else if (child.name === "LegL1" || child.name === "legL1") {
+            this.legL1Bone = child;
+            this.legL1BaseQuat = child.quaternion.clone();
+          } else if (child.name === "LegR1" || child.name === "legR1") {
+            this.legR1Bone = child;
+            this.legR1BaseQuat = child.quaternion.clone();
           }
         });
 
         this.group.add(this.playerGlbScene);
         this.isGlbLoaded = true;
 
-        const isGuest = this.checkIsGuest();
-        this.boxAvatarGroup.visible = isGuest;
-        this.playerGlbScene.visible = !isGuest;
+        // The real model is always used when loaded; box avatar is hidden
+        this.boxAvatarGroup.visible = false;
+        this.playerGlbScene.visible = true;
 
         if (this.currentSkinTexture) {
           this.applyTextureToGlb(this.currentSkinTexture);
@@ -216,7 +242,7 @@ export class Avatar {
         this.applyBloxityAccessories();
       })
       .catch((err) => {
-        console.warn("⚠️ [Bloxity] Failed to load player.glb, falling back to box avatar:", err);
+        console.warn("⚠️ [Bloxity] Failed to load player.glb, falling back to clean box avatar:", err);
         this.boxAvatarGroup.visible = true;
         this.isGlbLoaded = false;
       });
@@ -253,6 +279,10 @@ export class Avatar {
       this.hairId = cosmetics.hairId;
       changed = true;
     }
+    if (cosmetics.maskId !== undefined && cosmetics.maskId !== this.maskId) {
+      this.maskId = cosmetics.maskId;
+      changed = true;
+    }
     if (cosmetics.faceId !== undefined && cosmetics.faceId !== this.faceId) {
       this.faceId = cosmetics.faceId;
       changed = true;
@@ -264,12 +294,6 @@ export class Avatar {
     if (cosmetics.pantsId !== undefined && cosmetics.pantsId !== this.pantsId) {
       this.pantsId = cosmetics.pantsId;
       changed = true;
-    }
-
-    if (this.isGlbLoaded && this.playerGlbScene) {
-      const isGuest = this.checkIsGuest();
-      this.boxAvatarGroup.visible = isGuest;
-      this.playerGlbScene.visible = !isGuest;
     }
 
     this.updateNameTag();
@@ -290,17 +314,21 @@ export class Avatar {
     this.textureLoader.load(
       textureUrl,
       (texture) => {
+        texture.flipY = false;
         texture.colorSpace = THREE.SRGBColorSpace;
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.needsUpdate = true;
         this.currentSkinTexture = texture;
-        const customMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.3 });
-        this.torso.material = customMat;
-        this.head.material = customMat;
 
-        if (this.playerGlbScene) this.applyTextureToGlb(texture);
+        if (this.playerGlbScene) {
+          this.applyTextureToGlb(texture);
+        }
       },
       undefined,
       (err) => {
-        console.warn("⚠️ [Bloxity] Default skin fallback applied:", err);
+        console.warn("⚠️ [Bloxity] Skin texture load failed (retaining default appearance):", err);
       }
     );
   }
@@ -309,47 +337,91 @@ export class Avatar {
     if (!this.playerGlbScene) return;
     this.playerGlbScene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.3 });
+        const mesh = child as THREE.Mesh;
+        if (!mesh.userData.clonedMaterial) {
+          mesh.material = (mesh.material as THREE.Material).clone();
+          mesh.userData.clonedMaterial = true;
+        }
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        mat.map = texture;
+        if (this.frozenTimer > 0) {
+          mat.color.setHex(0x93c5fd);
+        } else {
+          mat.color.setHex(0xffffff);
+        }
+        mat.roughness = 0.4;
+        mat.metalness = 0.0;
+        mat.needsUpdate = true;
       }
     });
   }
 
-  private applyBloxityAccessories() {
+  public applyBloxityAccessories() {
     this.loadAndAttachAccessory(this.hatId, "hat");
     this.loadAndAttachAccessory(this.hairId, "hair");
+    this.loadAndAttachAccessory(this.maskId, "mask");
   }
 
-  private loadAndAttachAccessory(id: string, slot: "hat" | "hair") {
+  private loadAndAttachAccessory(id: string, slot: "hat" | "hair" | "mask") {
     const parentContainer =
       this.neck1Bone || (this.isGlbLoaded && this.playerGlbScene ? this.playerGlbScene : this.head);
 
     if (slot === "hat" && this.hatMesh) {
-      parentContainer.remove(this.hatMesh);
+      this.hatMesh.parent?.remove(this.hatMesh);
       this.hatMesh = null;
     } else if (slot === "hair" && this.hairMesh) {
-      parentContainer.remove(this.hairMesh);
+      this.hairMesh.parent?.remove(this.hairMesh);
       this.hairMesh = null;
+    } else if (slot === "mask" && this.maskMesh) {
+      this.maskMesh.parent?.remove(this.maskMesh);
+      this.maskMesh = null;
     }
 
-    if (!id || id === "-1" || id.trim() === "") return;
+    if (!id || id === "-1" || String(id).trim() === "") return;
 
     const objUrl = `${BLOXITY_STATIC_CDN}/items/hats/${id}.obj`;
     const texUrl = `${BLOXITY_STATIC_CDN}/textures/hats/${id}.png`;
 
-    this.textureLoader.load(texUrl, (texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
-      this.objLoader.load(objUrl, (obj) => {
-        obj.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) (child as THREE.Mesh).material = mat;
-        });
-        obj.position.set(0, 0.8, 0);
-        obj.scale.set(0.25, 0.25, 0.25);
-        if (slot === "hat") this.hatMesh = obj;
-        else if (slot === "hair") this.hairMesh = obj;
-        parentContainer.add(obj);
-      });
-    });
+    this.textureLoader.load(
+      texUrl,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
+        this.objLoader.load(
+          objUrl,
+          (obj) => {
+            obj.traverse((child) => {
+              if ((child as THREE.Mesh).isMesh) {
+                (child as THREE.Mesh).material = mat;
+                child.castShadow = true;
+              }
+            });
+            obj.position.set(0, 0.8, 0);
+            if (slot === "hat") {
+              if (this.hatMesh) this.hatMesh.parent?.remove(this.hatMesh);
+              this.hatMesh = obj;
+            } else if (slot === "hair") {
+              if (this.hairMesh) this.hairMesh.parent?.remove(this.hairMesh);
+              this.hairMesh = obj;
+            } else if (slot === "mask") {
+              if (this.maskMesh) this.maskMesh.parent?.remove(this.maskMesh);
+              this.maskMesh = obj;
+            }
+            parentContainer.add(obj);
+          },
+          undefined,
+          (err) => {
+            console.warn(`⚠️ [Bloxity] Failed to load ${slot} accessory obj (${id}):`, err);
+          }
+        );
+      },
+      undefined,
+      (err) => {
+        console.warn(`⚠️ [Bloxity] Failed to load ${slot} accessory texture (${id}):`, err);
+      }
+    );
   }
 
   public setEquippedDivineTrail(equipped: boolean) {
@@ -388,6 +460,14 @@ export class Avatar {
 
       this.leftArm.rotation.x = -Math.PI / 3;
       this.rightArm.rotation.x = -Math.PI / 3;
+      if (this.armL1Bone && this.armL1BaseQuat) {
+        const carryArmQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 3);
+        this.armL1Bone.quaternion.copy(this.armL1BaseQuat).premultiply(carryArmQuat);
+      }
+      if (this.armR1Bone && this.armR1BaseQuat) {
+        const carryArmQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 3);
+        this.armR1Bone.quaternion.copy(this.armR1BaseQuat).premultiply(carryArmQuat);
+      }
     } else if (petData) {
       this.carriedItemGroup = new THREE.Group();
       const bodyGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
@@ -400,9 +480,23 @@ export class Avatar {
 
       this.leftArm.rotation.x = -Math.PI / 3;
       this.rightArm.rotation.x = -Math.PI / 3;
+      if (this.armL1Bone && this.armL1BaseQuat) {
+        const carryArmQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 3);
+        this.armL1Bone.quaternion.copy(this.armL1BaseQuat).premultiply(carryArmQuat);
+      }
+      if (this.armR1Bone && this.armR1BaseQuat) {
+        const carryArmQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 3);
+        this.armR1Bone.quaternion.copy(this.armR1BaseQuat).premultiply(carryArmQuat);
+      }
     } else {
       this.leftArm.rotation.x = 0;
       this.rightArm.rotation.x = 0;
+      if (this.armL1Bone && this.armL1BaseQuat) {
+        this.armL1Bone.quaternion.copy(this.armL1BaseQuat);
+      }
+      if (this.armR1Bone && this.armR1BaseQuat) {
+        this.armR1Bone.quaternion.copy(this.armR1BaseQuat);
+      }
     }
 
     this.updateCarrierTargetTag();
@@ -512,16 +606,65 @@ export class Avatar {
       this.animTimer += dt * Math.min(30, animSpeed);
       const angle = Math.sin(this.animTimer) * 0.6;
 
-      if (!this.carriedEggTier && !this.carriedPetData) {
+      const swingQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
+      const oppSwingQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -angle);
+
+      if (this.carriedEggTier || this.carriedPetData) {
+        const carryArmQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 3);
+        if (this.armL1Bone && this.armL1BaseQuat) {
+          this.armL1Bone.quaternion.copy(this.armL1BaseQuat).premultiply(carryArmQuat);
+        }
+        if (this.armR1Bone && this.armR1BaseQuat) {
+          this.armR1Bone.quaternion.copy(this.armR1BaseQuat).premultiply(carryArmQuat);
+        }
+        this.leftArm.rotation.x = -Math.PI / 3;
+        this.rightArm.rotation.x = -Math.PI / 3;
+      } else {
+        if (this.armL1Bone && this.armL1BaseQuat) {
+          this.armL1Bone.quaternion.copy(this.armL1BaseQuat).premultiply(swingQuat);
+        }
+        if (this.armR1Bone && this.armR1BaseQuat) {
+          this.armR1Bone.quaternion.copy(this.armR1BaseQuat).premultiply(oppSwingQuat);
+        }
         this.leftArm.rotation.x = angle;
         this.rightArm.rotation.x = -angle;
+      }
+
+      if (this.legL1Bone && this.legL1BaseQuat) {
+        this.legL1Bone.quaternion.copy(this.legL1BaseQuat).premultiply(oppSwingQuat);
+      }
+      if (this.legR1Bone && this.legR1BaseQuat) {
+        this.legR1Bone.quaternion.copy(this.legR1BaseQuat).premultiply(swingQuat);
       }
       this.leftLeg.rotation.x = -angle;
       this.rightLeg.rotation.x = angle;
     } else {
-      if (!this.carriedEggTier && !this.carriedPetData) {
+      if (this.carriedEggTier || this.carriedPetData) {
+        const carryArmQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 3);
+        if (this.armL1Bone && this.armL1BaseQuat) {
+          this.armL1Bone.quaternion.copy(this.armL1BaseQuat).premultiply(carryArmQuat);
+        }
+        if (this.armR1Bone && this.armR1BaseQuat) {
+          this.armR1Bone.quaternion.copy(this.armR1BaseQuat).premultiply(carryArmQuat);
+        }
+        this.leftArm.rotation.x = -Math.PI / 3;
+        this.rightArm.rotation.x = -Math.PI / 3;
+      } else {
+        if (this.armL1Bone && this.armL1BaseQuat) {
+          this.armL1Bone.quaternion.slerp(this.armL1BaseQuat, 0.2);
+        }
+        if (this.armR1Bone && this.armR1BaseQuat) {
+          this.armR1Bone.quaternion.slerp(this.armR1BaseQuat, 0.2);
+        }
         this.leftArm.rotation.x *= 0.8;
         this.rightArm.rotation.x *= 0.8;
+      }
+
+      if (this.legL1Bone && this.legL1BaseQuat) {
+        this.legL1Bone.quaternion.slerp(this.legL1BaseQuat, 0.2);
+      }
+      if (this.legR1Bone && this.legR1BaseQuat) {
+        this.legR1Bone.quaternion.slerp(this.legR1BaseQuat, 0.2);
       }
       this.leftLeg.rotation.x *= 0.8;
       this.rightLeg.rotation.x *= 0.8;
@@ -545,9 +688,23 @@ export class Avatar {
     if (this.frozenTimer > 0) {
       (this.head.material as THREE.MeshStandardMaterial).color.setHex(0x93c5fd);
       (this.torso.material as THREE.MeshStandardMaterial).color.setHex(0x38bdf8);
+      if (this.playerGlbScene) {
+        this.playerGlbScene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            ((child as THREE.Mesh).material as THREE.MeshStandardMaterial).color.setHex(0x93c5fd);
+          }
+        });
+      }
     } else {
       (this.head.material as THREE.MeshStandardMaterial).color.setHex(0xffdbac);
       (this.torso.material as THREE.MeshStandardMaterial).color.setHex(this.isLocal ? 0x2563eb : 0xd97706);
+      if (this.playerGlbScene) {
+        this.playerGlbScene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            ((child as THREE.Mesh).material as THREE.MeshStandardMaterial).color.setHex(0xffffff);
+          }
+        });
+      }
     }
   }
 

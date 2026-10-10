@@ -207,6 +207,7 @@ export class NetworkManager {
         const localAvatar = this.sceneManager.getAvatar(this.localSessionId);
         if (localAvatar) {
           localAvatar.applyBloxitySkinTexture();
+          localAvatar.applyBloxityAccessories();
         }
       }
     });
@@ -470,6 +471,7 @@ export class NetworkManager {
                 faceId: player.faceId,
                 shirtId: player.shirtId,
                 pantsId: player.pantsId,
+                maskId: (player as any).maskId || "",
               },
               player.trappedTimer
             );
