@@ -194,40 +194,65 @@ export class NetworkManager {
   private setupBloxityEvents() {
     if (this.bloxityLoginBtn) {
       this.bloxityLoginBtn.addEventListener("click", async () => {
-        await showAuthPopup();
+        try {
+          await showAuthPopup();
+        } catch (err) {
+          console.warn("⚠️ [Boxity] Login popup error:", err);
+        }
       });
     }
     if (this.bloxityLogoutBtn) {
       this.bloxityLogoutBtn.addEventListener("click", () => {
-        logout();
+        try {
+          logout();
+        } catch (err) {
+          console.warn("⚠️ [Boxity] Logout error:", err);
+        }
       });
     }
 
     onUserChanged((user: BoxityUser | null) => {
-      this.updateBloxityAuthUI(user);
-      this.sendLocalBloxityCosmetics();
+      try {
+        console.log(`[Boxity] onUserChanged fired: ${user?.username ?? null}`);
+      } catch (e) {
+        // never throw
+      }
+      try {
+        this.updateBloxityAuthUI(user);
+        this.sendLocalBloxityCosmetics();
+      } catch (err) {
+        console.warn("⚠️ [Boxity] Error handling onUserChanged:", err);
+      }
     });
 
     onAvatarChanged(() => {
-      this.sendLocalBloxityCosmetics();
-      if (this.localSessionId) {
-        const localAvatar = this.sceneManager.getAvatar(this.localSessionId);
-        if (localAvatar) {
-          localAvatar.applyBloxitySkinTexture();
-          localAvatar.applyBloxityAccessories();
+      try {
+        this.sendLocalBloxityCosmetics();
+        if (this.localSessionId) {
+          const localAvatar = this.sceneManager.getAvatar(this.localSessionId);
+          if (localAvatar) {
+            localAvatar.applyBloxitySkinTexture();
+            localAvatar.applyBloxityAccessories();
+          }
         }
+      } catch (err) {
+        console.warn("⚠️ [Boxity] Error handling onAvatarChanged:", err);
       }
     });
 
     onPlayerEvent((event, data) => {
-      if (event === "play_emote" && data) {
-        this.room?.send("playEmote", { emoteId: data });
-        if (this.localSessionId) {
-          const localAvatar = this.sceneManager.getAvatar(this.localSessionId);
-          localAvatar?.playEmote(data);
+      try {
+        if (event === "play_emote" && data) {
+          this.room?.send("playEmote", { emoteId: data });
+          if (this.localSessionId) {
+            const localAvatar = this.sceneManager.getAvatar(this.localSessionId);
+            localAvatar?.playEmote(data);
+          }
+        } else if (event === "respawn_request") {
+          this.room?.send("respawnRequest");
         }
-      } else if (event === "respawn_request") {
-        this.room?.send("respawnRequest");
+      } catch (err) {
+        console.warn("⚠️ [Boxity] Error handling onPlayerEvent:", err);
       }
     });
 
@@ -274,13 +299,17 @@ export class NetworkManager {
 
   private sendLocalBloxityCosmetics() {
     if (!this.room) return;
-    const cosmetics = getEquippedCosmetics() || {};
-    const user = getUser();
-    const payload = {
-      ...cosmetics,
-      boxityUserId: user?._id || "",
-    };
-    this.room.send("updateBloxityAvatar", payload);
+    try {
+      const cosmetics = getEquippedCosmetics() || {};
+      const user = getUser();
+      const payload = {
+        ...cosmetics,
+        boxityUserId: user?._id || "",
+      };
+      this.room.send("updateBloxityAvatar", payload);
+    } catch (err) {
+      console.warn("⚠️ [Boxity] sendLocalBloxityCosmetics failed:", err);
+    }
   }
 
   private toggleShopModal() {

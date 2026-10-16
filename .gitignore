@@ -13,6 +13,7 @@ server/dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+err.txt
 
 # Environment & IDE
 .env
