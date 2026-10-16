@@ -24,11 +24,21 @@ function getOrLoadPlayerGlb(loader: GLTFLoader): Promise<THREE.Object3D> {
     loader.load(
       playerGlbUrl,
       (gltf) => {
+        try {
+          console.log(`[Boxity] Successfully loaded player.glb from ${playerGlbUrl}`);
+        } catch (e) {
+          // never throw
+        }
         cachedGlbScene = gltf.scene;
         resolve(cachedGlbScene);
       },
       undefined,
       (err) => {
+        try {
+          console.warn(`[Boxity] Failed to load player.glb from ${playerGlbUrl}:`, err);
+        } catch (e) {
+          // never throw
+        }
         glbLoadPromise = null;
         reject(err);
       }
@@ -285,7 +295,11 @@ export class Avatar {
         this.applyBloxityAccessories();
       })
       .catch((err) => {
-        console.warn("⚠️ [Bloxity] Failed to load player.glb, falling back to clean box avatar:", err);
+        try {
+          console.warn("⚠️ [Boxity] Failed to load player.glb, falling back to clean box avatar:", err);
+        } catch (e) {
+          // never throw
+        }
         this.boxAvatarGroup.visible = true;
         this.isGlbLoaded = false;
       });
@@ -348,29 +362,55 @@ export class Avatar {
   }
 
   public applyBloxitySkinTexture() {
-    let textureUrl = this.isLocal ? getSkinTextureUrl() || "" : "";
-    if (!textureUrl) {
-      textureUrl = buildRemoteSkinUrl(this.skinId, this.pantsId, this.shirtId, this.faceId);
+    let textureUrl = "";
+    try {
+      textureUrl = this.isLocal ? getSkinTextureUrl() || "" : "";
+    } catch (err) {
+      console.warn("⚠️ [Boxity] Error getting local skin texture URL:", err);
     }
+
+    if (!textureUrl) {
+      try {
+        textureUrl = buildRemoteSkinUrl(this.skinId, this.pantsId, this.shirtId, this.faceId);
+      } catch (err) {
+        console.warn("⚠️ [Boxity] Error building remote skin texture URL:", err);
+      }
+    }
+
+    try {
+      console.log(`[Boxity] Skin texture URL being loaded: ${textureUrl}`);
+    } catch (e) {
+      // never throw
+    }
+
+    if (!textureUrl) return;
 
     this.textureLoader.load(
       textureUrl,
       (texture) => {
-        texture.flipY = false;
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.magFilter = THREE.NearestFilter;
-        texture.minFilter = THREE.NearestFilter;
-        texture.generateMipmaps = false;
-        texture.needsUpdate = true;
-        this.currentSkinTexture = texture;
+        try {
+          texture.flipY = false;
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.magFilter = THREE.NearestFilter;
+          texture.minFilter = THREE.NearestFilter;
+          texture.generateMipmaps = false;
+          texture.needsUpdate = true;
+          this.currentSkinTexture = texture;
 
-        if (this.playerGlbScene) {
-          this.applyTextureToGlb(texture);
+          if (this.playerGlbScene) {
+            this.applyTextureToGlb(texture);
+          }
+        } catch (err) {
+          console.warn("⚠️ [Boxity] Error applying skin texture to mesh:", err);
         }
       },
       undefined,
       (err) => {
-        console.warn("⚠️ [Bloxity] Skin texture load failed (retaining default appearance):", err);
+        try {
+          console.warn(`⚠️ [Boxity] Skin texture load failed (retaining default appearance) for URL '${textureUrl}':`, err);
+        } catch (e) {
+          // never throw
+        }
       }
     );
   }
@@ -634,14 +674,19 @@ export class Avatar {
   }
 
   public playEmote(emoteId: string) {
-    if (!emoteId || typeof emoteId !== "string") {
+    try {
+      if (!emoteId || typeof emoteId !== "string") {
+        this.stopEmote();
+        return;
+      }
+      const emote = getEmote(emoteId);
+      this.currentEmoteId = emoteId;
+      this.emoteTimer = 0;
+      this.activeEmoteClip = emote?.clip || null;
+    } catch (err) {
+      console.warn("⚠️ [Boxity] Failed to play emote:", err);
       this.stopEmote();
-      return;
     }
-    const emote = getEmote(emoteId);
-    this.currentEmoteId = emoteId;
-    this.emoteTimer = 0;
-    this.activeEmoteClip = emote?.clip || null;
   }
 
   public stopEmote() {

@@ -220,7 +220,7 @@ npm run test:freeze
 
 ### Architecture & Scope
 - **Integration Module**: Encapsulated in `client/src/bloxity.ts`.
-- **Game Slug Constant**: `BOXITY_GAME_SLUG = "egg-heist"`.
+- **Game Slug Constant**: `BOXITY_GAME_SLUG = "egg-heist-game"`.
 - **Server Architecture**: Colyseus server runs on Render (authoritative game loop & WebSocket sync). Out-of-scope features are explicitly commented with `// TODO`:
   - `Legion.SDK.net` & `resolveEndpoint`
   - `play.bloxity.io` & party play
